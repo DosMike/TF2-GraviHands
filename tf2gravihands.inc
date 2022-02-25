@@ -4,7 +4,7 @@
 #define _tf2_gravihands
 
 #define GRAVIHANDS_VERSION "22w08a"
-#define GRAVIHANDS_VERSION 220801
+#define GRAVIHANDS_BUILD   220801
 
 /**
  * There are two flags that might not be immediately obvious:
