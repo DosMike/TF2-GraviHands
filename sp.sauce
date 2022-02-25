@@ -1,0 +1,15 @@
+sourcemod 1.10
+auth github ${spsgitpat}
+
+#smlib and morecolors
+dependency github bcserv/smlib transitional_syntax-SNAPSHOT
+dependency raw https://raw.githubusercontent.com/DoctorMcKay/sourcemod-plugins/master/scripting/include/morecolors.inc
+
+dependency limetech tf2items latest
+dependency limetech vphysics latest
+dependency github nosoop/tf2attributes latest
+dependency github nosoop/SM-TFEconData latest
+# optional:
+dependency github DosMike/TF2-PvP-OptIn latest
+
+spcomp tf2gravihands.sp
