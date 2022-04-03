@@ -147,6 +147,17 @@ native int TF2GH_GetGraviHandsHeldEntity(int client);
  */
 native void TF2GH_ForceGraviHandsDropEntity(int client, bool punt=false);
 
+/**
+ * Prevent a player from a-posing after all weapons were removed.
+ * If no more weapons are present, this state will be noted and fists will be
+ * equipped.
+ * This is intended to be called after TF2_RemoveAllWeapons(client)
+ * 
+ * @param client - the client to check
+ * @error invalid client or client not ingame or client not alive
+ */
+native void TF2GH_PreventClientAPosing(int client);
+
 public SharedPlugin:__pl_tf2gravihands = {
 	name = "tf2gravihands",
 	file = "tf2gravihands.smx",
@@ -163,5 +174,6 @@ public __pl_tf2gravihands_SetNTVOptional() {
 	MarkNativeAsOptional("TF2GH_GetClientHoslteredWeapon");
 	MarkNativeAsOptional("TF2GH_GetGraviHandsHeldEntity");
 	MarkNativeAsOptional("TF2GH_ForceGraviHandsDropEntity");
+	MarkNativeAsOptional("TF2GH_PreventClientAPosing");
 }
 #endif

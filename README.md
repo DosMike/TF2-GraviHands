@@ -28,7 +28,7 @@ I know that it's not perfect and you can work props through walls, but it should
 
 ## Config
 
-The config is auto created in the usual spot int `cfg/sourcemod/plugin.tf2gravihands.cfg` with the following values:
+The config is auto created in the usual spot in `cfg/sourcemod/plugin.tf2gravihands.cfg` with the following values:
 ```
 tf2gravihands_maxmass 250.0 - Max weight, the hands can pick up
 tf2gravihands_throwforce 1000.0 - Multiplier used when throwing props

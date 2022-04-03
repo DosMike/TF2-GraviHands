@@ -166,37 +166,41 @@ static bool movementCollides(int client, float endpos[3], bool onlyTarget) {
 	return result;
 }
 
+/**
+ * This only gets call if isMeleeGravHands in OnPlayerRunCmd, so this does not 
+ * have to check if gravity hands are out.
+ */
 bool clientCmdHoldProp(int client, int &buttons, float velocity[3], float angles[3]) {
 //	float yawAngle[3];
 //	yawAngle[1] = angles[1];
-	int activeWeapon = Client_GetActiveWeapon(client);
-	int defIndex = (activeWeapon == INVALID_ENT_REFERENCE) ? INVALID_ITEM_DEFINITION : GetEntProp(activeWeapon, Prop_Send, "m_iItemDefinitionIndex");
-	if (defIndex == 5) {
-		if ((buttons & IN_ATTACK2) && !GravHand[client].forceDropProp) {
-			if (GetEntPropFloat(client, Prop_Send, "m_flNextAttack") - GetGameTime() < 0.1) {
-				SetEntPropFloat(client, Prop_Send, "m_flNextAttack", GetGameTime() + 0.5);
-			}
-			float clientTime = GetClientTime(client);
-			if (GravHand[client].nextPickup - clientTime > 0) return false;
-			
-			int grabbed = EntRefToEntIndex(GravHand[client].grabbedEnt);
-			//grabbing
-			if (grabbed == INVALID_ENT_REFERENCE) { //try to pick up cursorEnt
-				if (!(gGraviHandsGrabDistance>0.0 && TryPickupCursorEnt(client, angles)) &&
-					!(gGraviHandsPullDistance>0.0 && TryPullCursorEnt(client, angles)) ) {
-					//if another sound already played, nothing will happen
-					PlayActionSound(client, GH_ACTION_INVALID);
-					return false;
-				}
-			} else {
-				ThinkHeldProp(client, grabbed, buttons, angles);
-			}
-			return true;
-		} else if (!(buttons & IN_ATTACK2)) {
-			SetEntPropFloat(client, Prop_Send, "m_flFirstPrimaryAttack", 0.0);
-			SetEntPropFloat(client, Prop_Send, "m_flNextAttack", 0.0);
-			buttons &=~ IN_ATTACK2;
+	if ((buttons & IN_ATTACK2) && !GravHand[client].forceDropProp) {
+		if (GetEntPropFloat(client, Prop_Send, "m_flNextAttack") - GetGameTime() < 0.1) {
+			SetEntPropFloat(client, Prop_Send, "m_flNextAttack", GetGameTime() + 0.5);
 		}
+		float clientTime = GetClientTime(client);
+		if (GravHand[client].nextPickup - clientTime > 0) return false;
+		
+		int grabbed = EntRefToEntIndex(GravHand[client].grabbedEnt);
+		//grabbing
+		if (grabbed == INVALID_ENT_REFERENCE) { //try to pick up cursorEnt
+			if (!(gGraviHandsGrabDistance>0.0 && TryPickupCursorEnt(client, angles)) &&
+				!(gGraviHandsPullDistance>0.0 && TryPullCursorEnt(client, angles)) ) {
+				//couldn't pull or grab? give it a small cooldown
+				GravHand[client].nextPickup = GetClientTime(client) + 0.5;
+				//let the sound replay for pulling
+				GravHand[client].lastInteractedEnt = INVALID_ENT_REFERENCE;
+				//if another sound already played, nothing will happen
+				PlayActionSound(client, GH_ACTION_INVALID);
+				return false;
+			}
+		} else {
+			ThinkHeldProp(client, grabbed, buttons, angles);
+		}
+		return true;
+	} else if (!(buttons & IN_ATTACK2)) {
+//		SetEntPropFloat(client, Prop_Send, "m_flFirstPrimaryAttack", GetGameTime()+0.5);
+		SetEntPropFloat(client, Prop_Send, "m_flNextAttack", GetGameTime());
+		buttons &=~ IN_ATTACK2;
 	}
 	//drop anything held
 	return ForceDropItem(client, buttons & IN_ATTACK && GravHand[client].forceDropProp, velocity, angles);
@@ -219,6 +223,7 @@ static bool TryPickupCursorEnt(int client, float yawAngle[3]) {
 	char classname[20];
 	GetEntityClassname(cursorEnt, classname, sizeof(classname));
 	int pickupFlags = 0;
+	bool weaponOrGib;
 	if (StrContains(classname, "prop_physics")==0) {
 		if (Entity_GetFlags(cursorEnt) & FL_FROZEN) {
 			pickupFlags |= PickupFlag_MotionDisabled;
@@ -260,6 +265,7 @@ static bool TryPickupCursorEnt(int client, float yawAngle[3]) {
 		}
 	} else if (StrEqual(classname, "tf_dropped_weapon") || StrEqual(classname, "tf_ammo_pack")) {
 		pickupFlags = 0;
+		weaponOrGib = true;
 	} else { //not an entity we could pick up
 		PlayActionSound(client,GH_ACTION_INVALID);
 		return false;
@@ -275,14 +281,14 @@ static bool TryPickupCursorEnt(int client, float yawAngle[3]) {
 		return false;
 	}
 	//ok now we can finally pick this thing up
-	if ((pickupFlags & PickupFlag_EnableMotion)!=0 && !Phys_IsMotionEnabled(cursorEnt)) {
+	if (!weaponOrGib && (pickupFlags & PickupFlag_EnableMotion)!=0 && !Phys_IsMotionEnabled(cursorEnt)) {
 		//Phys_EnableMotion(cursorEnt, true);
 		AcceptEntityInput(cursorEnt, "EnableMotion", client, client);
 	}
 	GravHand[client].blockPunt = ((pickupFlags & PickupFlag_BlockPunting)!=0);
 	
 	//generate outputs
-	FireEntityOutput(cursorEnt, "OnPhysGunPickup", client);
+	if (!weaponOrGib) FireEntityOutput(cursorEnt, "OnPhysGunPickup", client);
 	//check if this entity is already grabbed
 	for (int i=1;i<=MaxClients;i++) {
 		if (cursorEnt == EntRefToEntIndex(GravHand[client].grabbedEnt)) {
@@ -322,10 +328,14 @@ static bool TryPullCursorEnt(int client, float yawAngle[3]) {
 	char classname[64];
 	
 	int entity = pew(client, target, gGraviHandsPullDistance);
-	if (entity == INVALID_ENT_REFERENCE) return false;
+	if (entity == INVALID_ENT_REFERENCE) {
+		return false;
+	}
 	Entity_GetClassName(entity, classname, sizeof(classname));
-	if (StrContains(classname,"prop_physics")!=0 && !StrEqual(classname, "func_physbox")
-		&& !StrEqual(classname, "tf_dropped_weapon") && !StrEqual(classname, "tf_ammo_pack")) return false;
+	if (StrContains(classname,"prop_physics")!=0 && !StrEqual(classname, "func_physbox") &&
+		!StrEqual(classname, "tf_dropped_weapon") && !StrEqual(classname, "tf_ammo_pack")) {
+		return false;
+	}
 	
 	GetAngleVectors(yawAngle, force, NULL_VECTOR, NULL_VECTOR);
 	GetClientEyePosition(client, eyePos);
@@ -341,6 +351,7 @@ static bool TryPullCursorEnt(int client, float yawAngle[3]) {
 	float forceScale = normalizedDistance * forceRange + gGraviHandsPullForceFar; //scaled over range + min
 	ScaleVector(force, -forceScale);
 	Phys_GetEnvironmentGravity(grav);
+	ScaleVector(grav, 0.8); //full gravity feels a bit much
 	SubtractVectors(force, grav, force);
 	Phys_ApplyForceCenter(entity, force);
 //	Phys_ApplyForceOffset(entity, force, target); //does weird stuff :o
@@ -404,7 +415,11 @@ bool ForceDropItem(int client, bool punt=false, const float dvelocity[3]=NULL_VE
 		Phys_AddVelocity(entity, vec, zeros);//use vphysics to accelerate, is more stable
 		
 		//fire output that the ent was dropped
-		FireEntityOutput(entity, punt?"OnPhysGunPunt":"OnPhysGunDrop", client);
+		{	char classname[64];
+			GetEntityClassname(entity, classname, sizeof(classname));
+			if (StrContains(classname, "prop_physics")==0 || StrEqual(classname, "func_physbox"))
+				FireEntityOutput(entity, punt?"OnPhysGunPunt":"OnPhysGunDrop", client);
+		}
 		//reset ref because we're nice
 		Entity_SetCollisionGroup(entity, GravHand[client].collisionFlags);
 		GravHand[client].grabbedEnt = INVALID_ENT_REFERENCE;

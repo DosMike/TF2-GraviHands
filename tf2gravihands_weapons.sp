@@ -10,7 +10,8 @@
 //on the invalid default values:
 // some stuff uses negative levels (like the physgun) as it shows positive but can mark custom weapons
 // quality afaik is always positive
-int EquipPlayerMelee(int client, int definitionIndex, int level=9000, int quality=-1, int attribCount=0, int customAttribIds[]={}, any customAttribVals[]={}) {
+int EquipPlayerMelee(int client, int definitionIndex, int level=9000, int quality=-1,
+			int attribCount=0, int customAttribIds[]={}, any customAttribVals[]={}) {
 	if (!TF2Econ_IsValidItemDefinition(definitionIndex))
 		ThrowError("Definition index %d is invalid", definitionIndex);
 	
@@ -34,10 +35,11 @@ int EquipPlayerMelee(int client, int definitionIndex, int level=9000, int qualit
 	Handle weapon = TF2Items_CreateItem(flags);
 	TF2Items_SetLevel(weapon, level>=0?level:0);
 	TF2Items_SetQuality(weapon, quality);
-	TF2Items_SetNumAttributes(weapon, attribCount);
-	for (int a; a<attribCount; a++) {
-		TF2Items_SetAttribute(weapon, a, customAttribIds[a], customAttribVals[a]);
-	}
+//	TF2Items_SetNumAttributes(weapon, attribCount);
+//	for (int a; a<attribCount; a++) {
+//		TF2Items_SetAttribute(weapon, a, customAttribIds[a], customAttribVals[a]);
+//	}
+	TF2Items_SetNumAttributes(weapon, 0);
 	TF2Items_SetItemIndex(weapon, definitionIndex);
 	TF2Items_SetClassname(weapon, class);
 	
@@ -45,9 +47,16 @@ int EquipPlayerMelee(int client, int definitionIndex, int level=9000, int qualit
 	int entity = TF2Items_GiveNamedItem(client, weapon);
 	delete weapon;
 	if (entity != INVALID_ENT_REFERENCE) {
+		//post apply arttribs, because tf2attribs allows for more attribs than the ol tf2items
+		for (int a; a<attribCount; a++)
+			TF2Attrib_SetByDefIndex(entity, customAttribIds[a], customAttribVals[a]);
+		if (attribCount) TF2Attrib_ClearCache(entity);
+		
+		EquipPlayerWeapon(client, entity);
+		TF2Attrib_ClearCache(client);
+		
 		SetEntProp(entity, Prop_Send, "m_bValidatedAttachedEntity", 1);
 		SetEntProp(entity, Prop_Send, "m_iAccountID", GetSteamAccountID(client));
-		EquipPlayerWeapon(client, entity);
 	}
 	return entity;
 }
@@ -57,6 +66,8 @@ bool HolsterMelee(int client) {
 		return false; //not for bots
 	if (player[client].holsteredWeapon != INVALID_ITEM_DEFINITION) 
 		return false; //already holstered
+	if (player[client].weaponsStripped)
+		return false; //wow hey, don't holster grav hands
 	
 	int active = Client_GetActiveWeapon(client);
 	int melee = GetPlayerWeaponSlot(client, TFWeaponSlot_Melee);
@@ -85,7 +96,7 @@ bool HolsterMelee(int client) {
 		player[client].holsteredAttributeCount = attribCount;
 	}
 	//equip new melee
-	int fists = EquipPlayerMelee(client, 5);
+	int fists = EquipPlayerMelee(client, ITEM_DEFINITION_HEAVY_FISTS);
 	if (fists == INVALID_ENT_REFERENCE) return false; //giving fists failed?
 	//needs to be set after Equip call due to event order
 	player[client].holsteredWeapon = holsterIndex;
@@ -104,7 +115,7 @@ void UnholsterMelee(int client) {
 void ActualUnholsterMelee(int client) {
 	if (!IsValidClient(client, false))
 		return; //not for bots
-	if (player[client].holsteredWeapon == INVALID_ITEM_DEFINITION)
+	if (player[client].holsteredWeapon == INVALID_ITEM_DEFINITION || player[client].weaponsStripped)
 		return; //no weapon holstered
 	
 	if (!NotifyWeaponUnholster(client, player[client].holsteredWeapon))
@@ -140,8 +151,23 @@ bool IsActiveWeaponHolster(int client, int& weapon=INVALID_ENT_REFERENCE) {
 	if (!IsValidEdict(weapon)) return false;
 	
 	//if the holster is empty, this has to be an actual weapon
-	if (player[client].holsteredWeapon == INVALID_ITEM_DEFINITION) return false;
+	// if weapons were stripped, there is no holster but fists are sill gravi-hands
+	if (player[client].holsteredWeapon == INVALID_ITEM_DEFINITION && !player[client].weaponsStripped) return false;
 	//we use heavy stock fists for "no model"
-	if (GetEntProp(weapon, Prop_Send, "m_iItemDefinitionIndex") != 5) return false;
+	if (GetEntProp(weapon, Prop_Send, "m_iItemDefinitionIndex") != ITEM_DEFINITION_HEAVY_FISTS) return false;
 	return true;
+}
+
+void PreventAPosing(int client) {
+	if (Client_GetActiveWeapon(client) != INVALID_ENT_REFERENCE) return;
+	for (int slot=0;slot<5;slot++) {
+		int weapon = Client_GetWeaponBySlot(client, slot);
+		if (weapon != INVALID_ENT_REFERENCE) {
+			Client_SetActiveWeapon(client, slot);
+			return;
+		}
+	}
+	
+	player[client].weaponsStripped = true;
+	EquipPlayerMelee(client, ITEM_DEFINITION_HEAVY_FISTS);
 }

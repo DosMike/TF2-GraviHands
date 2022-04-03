@@ -34,7 +34,7 @@
 #pragma newdecls required
 #pragma semicolon 1
 
-#define PLUGIN_VERSION "22w08a"
+#define PLUGIN_VERSION "22w13a"
 //#define PLUGIN_DEBUG
 
 public Plugin myinfo = {
@@ -66,16 +66,18 @@ public Plugin myinfo = {
 #endif
 
 #define INVALID_ITEM_DEFINITION -1
+#define ITEM_DEFINITION_HEAVY_FISTS 5
 
 enum struct PlayerData {
 	float timeSpawned;
 	bool handledDeath;
+	int weaponsStripped; //if we find out that the player is a posing, we mark this here. 1=detected, 2=given fists
 	
 	int holsteredWeapon;
 	int holsteredMeta[2];
 	int holsteredAttributeCount;
-	int holsteredAttributeIds[16];
-	any holsteredAttributeValues[16];
+	int holsteredAttributeIds[32];
+	any holsteredAttributeValues[32];
 	
 	int previousButtons;
 	
@@ -207,15 +209,28 @@ public void OnPlayerSpawnPost(int client) {
 //this is for when something else replaces the melee weapon
 public Action OnClientWeaponEquip(int client, int weapon) {
 	if (!IsValidClient(client,false) || weapon == INVALID_ENT_REFERENCE) return Plugin_Continue;
+	
 	// THIS WOULD WORK BETTER WITH NOSOOPS TF2UTILS BUT I DON'T WANT TO INTRODUCE
 	// ANOTHER DEPENDENCY. IF YOU THINK IT'S WORTH IT, JUST INCLUDE THE PLUGIN AND 
 	// SWAP COMMENTS FOR THE NEXT TWO LINES 
 	//int slot = TF2Util_GetWeaponSlot(weapon);
-	int slot = TF2Econ_GetItemDefaultLoadoutSlot(GetEntProp(weapon, Prop_Send, "m_iItemDefinitionIndex"));
+	int iindex = GetEntProp(weapon, Prop_Send, "m_iItemDefinitionIndex");
+	int slot = TF2Econ_GetItemDefaultLoadoutSlot(iindex);
 	if (slot == TFWeaponSlot_Melee && player[client].holsteredWeapon != INVALID_ITEM_DEFINITION) {
 		//equipped melee while melee was holstered
 		DropHolsteredMelee(client);
 	}
+	//undo the stripped status
+	if (player[client].weaponsStripped == 1 && iindex == ITEM_DEFINITION_HEAVY_FISTS) {
+		player[client].weaponsStripped = 2;
+	} else if (player[client].weaponsStripped) {
+		player[client].weaponsStripped = false;
+		if (slot != TFWeaponSlot_Melee) { //the weapon we got is not melee? drop fists and use whatever we got
+			TF2_RemoveWeaponSlot(client, TFWeaponSlot_Melee);
+			Client_SetActiveWeapon(client, weapon);
+		}
+	}
+	
 	return Plugin_Continue;
 }
 void OnClientWeaponSwitchPost(int client, int weapon) {
@@ -240,14 +255,19 @@ public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3
 		} else {
 			PrintToChat(client, "[SM] Holstering is currently not enabled");
 		}
-	} else if (isMeleeGravHands && gEnabledFeatures & PZ_FEATURE_GRAVIHANDS) {
+	} else if (isMeleeGravHands && (gEnabledFeatures & PZ_FEATURE_GRAVIHANDS)) {
 		float velocity[3];
 		Entity_GetAbsVelocity(client, velocity);
 		clientCmdHoldProp(client, buttons, velocity, angles);
 		
-		if (TF2_GetPlayerClass(client)==TFClass_DemoMan && (buttons&IN_ATTACK2)) {
-			//don't charge while using hands
+		if (buttons&IN_ATTACK2) {
+			//don't charge or cloak or do other things while using hands
 			buttons &=~ IN_ATTACK2;
+			changed = true;
+		}
+	} else if (player[client].weaponsStripped) {
+		if (buttons & (IN_ATTACK|IN_ATTACK2|IN_ATTACK3)) {
+			buttons &=~ (IN_ATTACK|IN_ATTACK2|IN_ATTACK3);
 			changed = true;
 		}
 	}
@@ -255,7 +275,7 @@ public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3
 	return changed?Plugin_Changed:Plugin_Continue;
 }
 public void OnPlayerRunCmdPost(int client, int buttons, int impulse, const float vel[3], const float angles[3], int weapon, int subtype, int cmdnum, int tickcount, int seed, const int mouse[2]) {
-	if (!IsValidClient(client)) return;	
+	if (!IsValidClient(client)) return;
 	player[client].previousButtons = buttons;
 }
 
@@ -271,8 +291,8 @@ public Action OnPlayerTakeDamage(int victim, int &attacker, int &inflictor, floa
 	
 	if (IsValidClient(attacker) && victim != attacker && damagetype & DMG_CLUB) { //melee is using club damage type
 		int gun=weapon; //prevent writeback on invalid ent ref
-		if (IsActiveWeaponHolster(attacker, gun)) {
-			//this player is currently using fists, don't damage
+		if (player[attacker].weaponsStripped || IsActiveWeaponHolster(attacker, gun)) {
+			//this player is currently using gravity hands or is unarmed, don't damage
 			return Plugin_Handled;
 		}
 	}
@@ -311,11 +331,13 @@ public Action Command_Holster(int client, int args) {
 	return Plugin_Handled;
 }
 
+
 public Action OnNotifyGravihandsActive(Handle timer) {
 	SetHudTextParams(0.1, 0.95, 1.0, 255, 200, 0, 255, _, 0.0, 0.0, 0.1);
 	for (int client=1;client<=MaxClients;client++) {
-		if(!IsValidClient(client,false) || player[client].holsteredWeapon==INVALID_ITEM_DEFINITION) continue;
-		ShowHudText(client, -1, "Weapons Holstered");
+		if (!IsValidClient(client,false)) continue;
+		else if (player[client].weaponsStripped) ShowHudText(client, -1, "Unarmed");
+		else if (player[client].holsteredWeapon!=INVALID_ITEM_DEFINITION) ShowHudText(client, -1, "Weapons Holstered");
 	}
 	return Plugin_Continue;
 }
@@ -485,6 +507,7 @@ public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max
 	CreateNative("TF2GH_GetClientHoslteredWeapon", NativeGetPlayerHolster);
 	CreateNative("TF2GH_GetGraviHandsHeldEntity", NativeGetGraviHandsEntity);
 	CreateNative("TF2GH_ForceGraviHandsDropEntity", NativeDropGraviHandsEntity);
+	CreateNative("TF2GH_PreventClientAPosing", NativePreventAPosing);
 	RegPluginLibrary("tf2gravihands");
 }
 public any NativeGetPlayerHolster(Handle plugin, int numParams) {
@@ -510,4 +533,10 @@ public any NativeDropGraviHandsEntity(Handle plugin, int numParams) {
 	} else {
 		ForceDropItem(client, false, vel);
 	}
+}
+public any NativePreventAPosing(Handle plugin, int numPrams) {
+	int client = GetNativeCell(1);
+	if (!(1<=client<=MaxClients)||!IsClientInGame(client)||!IsPlayerAlive(client))
+		ThrowNativeError(SP_ERROR_PARAM, "Invalid client or client not alive (client %i)", client);
+	PreventAPosing(client);
 }
