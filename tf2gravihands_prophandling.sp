@@ -87,8 +87,11 @@ static void computeBounds(int entity, float mins[3], float maxs[3]) {
 	Entity_GetMinSize(entity, mins);
 	Entity_GetMaxSize(entity, maxs);
 	AddVectors(mins,maxs,mins);
-	ScaleVector(mins,0.5); //mins = now COM
-	
+	ScaleVector(mins,0.5); //mins = now Center
+	//now rotate with the prop
+	float r[3];
+	Entity_GetAbsAngles(entity, r);
+	Math_RotateVector(mins, r, mins);
 	//create equidistant box to keep origin of prop in world
 	AddVectors(mins,v,maxs);
 	SubtractVectors(mins,v,mins);
@@ -102,7 +105,6 @@ static int pew(int client, float targetPoint[3], float scanDistance) {
 	float eyePos[3], eyeAngles[3], fwrd[3];
 	GetClientEyePosition(client, eyePos);
 	GetClientEyeAngles(client, eyeAngles);
-//	GetAngleVectors(eyeAngles, fwrd, NULL_VECTOR, NULL_VECTOR);
 	Handle trace = TR_TraceRayFilterEx(eyePos, eyeAngles, MASK_SOLID, RayType_Infinite, grabFilter, client);
 	int cursor = INVALID_ENT_REFERENCE;
 	if(TR_DidHit(trace)) {
@@ -128,22 +130,6 @@ static int pew(int client, float targetPoint[3], float scanDistance) {
 	return cursor;
 }
 
-//public bool seeCenterFilter(int entity, int contentsMask, int prop) {
-//	return !entity || (entity > MaxClients && entity != prop);
-//}
-//
-//static bool checkPropCenterVisible(int client, int prop) {
-//	//require los to COM to be unobstructed
-//	float vec1[3], vec2[3];
-//	Entity_GetMinSize(prop, vec1);
-//	Entity_GetMaxSize(prop, vec2);
-//	AddVectors(vec1, vec2, vec1);
-//	ScaleVector(vec1, 0.5);
-//	GetClientEyePosition(client, vec2);
-//	TR_TraceRayFilter(vec1, vec2, MASK_SOLID, RayType_EndPoint, seeCenterFilter, prop);
-//	return !TR_DidHit();
-//}
-
 static bool movementCollides(int client, float endpos[3], bool onlyTarget) {
 	//check if prop would collide at target position
 	float offset[3], from[3], to[3], mins[3], maxs[3];
@@ -151,7 +137,7 @@ static bool movementCollides(int client, float endpos[3], bool onlyTarget) {
 	if (grabbed == INVALID_ENT_REFERENCE) ThrowError("%L is not currently grabbing anything", client);
 	//get movement
 	SubtractVectors(endpos, GravHand[client].lastValid, offset);
-	Entity_GetAbsOrigin(grabbed, from);
+	GetEntPropVector(grabbed, Prop_Data, "m_vecAbsOrigin", from);
 	AddVectors(from, offset, to);
 	if (onlyTarget) {
 		from[0]=to[0]-0.1;
@@ -160,9 +146,8 @@ static bool movementCollides(int client, float endpos[3], bool onlyTarget) {
 	}
 	computeBounds(grabbed, mins, maxs);
 	//trace it
-	Handle trace = TR_TraceHullFilterEx(from, to, mins, maxs, MASK_SOLID, grabFilter, client);
-	bool result = TR_DidHit(trace);
-	delete trace;
+	TR_TraceHullFilter(from, to, mins, maxs, MASK_SOLID, grabFilter, client);
+	bool result = TR_DidHit();
 	return result;
 }
 
@@ -171,8 +156,6 @@ static bool movementCollides(int client, float endpos[3], bool onlyTarget) {
  * have to check if gravity hands are out.
  */
 bool clientCmdHoldProp(int client, int &buttons, float velocity[3], float angles[3]) {
-//	float yawAngle[3];
-//	yawAngle[1] = angles[1];
 	if ((buttons & IN_ATTACK2) && !GravHand[client].forceDropProp) {
 		if (GetEntPropFloat(client, Prop_Send, "m_flNextAttack") - GetGameTime() < 0.1) {
 			SetEntPropFloat(client, Prop_Send, "m_flNextAttack", GetGameTime() + 0.5);
@@ -198,7 +181,6 @@ bool clientCmdHoldProp(int client, int &buttons, float velocity[3], float angles
 		}
 		return true;
 	} else if (!(buttons & IN_ATTACK2)) {
-//		SetEntPropFloat(client, Prop_Send, "m_flFirstPrimaryAttack", GetGameTime()+0.5);
 		SetEntPropFloat(client, Prop_Send, "m_flNextAttack", GetGameTime());
 		buttons &=~ IN_ATTACK2;
 	}
@@ -301,9 +283,10 @@ static bool TryPickupCursorEnt(int client, float yawAngle[3]) {
 	TeleportEntity(cursorEnt, NULL_VECTOR, NULL_VECTOR, killVelocity);
 	//grab entity
 	GravHand[client].grabbedEnt = EntIndexToEntRef(cursorEnt);
-	float vec[3];
+	float vec[3], vec2[3];
 	GetClientEyePosition(client, vec);
-	GravHand[client].grabDistance = Entity_GetDistanceOrigin(rotProxy, vec);
+	GetEntPropVector(rotProxy, Prop_Data, "m_vecAbsOrigin", vec2);
+	GravHand[client].grabDistance = GetVectorDistance(vec2, vec);
 	//parent to make rotating easier
 	SetVariantString("!activator");
 	AcceptEntityInput(cursorEnt, "SetParent", rotProxy);
@@ -392,7 +375,7 @@ bool ForceDropItem(int client, bool punt=false, const float dvelocity[3]=NULL_VE
 	int entity;
 	if ((entity = EntRefToEntIndex(GravHand[client].grabbedEnt))!=INVALID_ENT_REFERENCE) {
 		float vec[3], origin[3];
-		Entity_GetAbsOrigin(entity, origin);
+		GetEntPropVector(entity, Prop_Data, "m_vecAbsOrigin", origin);
 		AcceptEntityInput(entity, "ClearParent");
 		//fling
 		bool didPunt;
@@ -401,7 +384,6 @@ bool ForceDropItem(int client, bool punt=false, const float dvelocity[3]=NULL_VE
 			GetAngleVectors(dvangles, vec, NULL_VECTOR, NULL_VECTOR);
 			ScaleVector(vec, gGraviHandsPuntForce * 100.0 / Phys_GetMass(entity));
 //				AddVectors(vec, fwd, vec);
-//			PrintToServer("Punting Prop with Mass %f", Phys_GetMass(entity));
 			didPunt=true;
 		} else if (!movementCollides(client, vec, false)) { //throw with swing
 			SubtractVectors(vec, GravHand[client].previousEnd, vec);
@@ -411,8 +393,8 @@ bool ForceDropItem(int client, bool punt=false, const float dvelocity[3]=NULL_VE
 		}
 		if (!IsNullVector(dvelocity)) AddVectors(vec, dvelocity, vec);
 		float zeros[3];
-		TeleportEntity(entity, origin, NULL_VECTOR, zeros); //rest entity
-		Phys_AddVelocity(entity, vec, zeros);//use vphysics to accelerate, is more stable
+		TeleportEntity(entity, origin, NULL_VECTOR, zeros); //reset entity
+		Phys_SetVelocity(entity, vec, zeros, true);//use vphysics to accelerate, is more stable
 		
 		//fire output that the ent was dropped
 		{	char classname[64];
@@ -430,7 +412,7 @@ bool ForceDropItem(int client, bool punt=false, const float dvelocity[3]=NULL_VE
 		didStuff = true;
 	}
 	if ((entity = EntRefToEntIndex(GravHand[client].rotProxyEnt))!=INVALID_ENT_REFERENCE) {
-		RequestFrame(killEntity, entity);
+		AcceptEntityInput(entity, "Kill");
 		GravHand[client].rotProxyEnt = INVALID_ENT_REFERENCE;
 		didStuff = true;
 	}
@@ -470,11 +452,6 @@ void PlayActionSound(int client, int sound) {
 		}
 		GravHand[client].lastAudibleAction = sound;
 	}
-}
-
-static void killEntity(int entity) {
-	if (IsValidEntity(entity))
-		AcceptEntityInput(entity, "Kill");
 }
 
 bool FixPhysPropAttacker(int victim, int& attacker, int& inflictor, int& damagetype) {

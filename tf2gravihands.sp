@@ -34,7 +34,7 @@
 #pragma newdecls required
 #pragma semicolon 1
 
-#define PLUGIN_VERSION "22w13a"
+#define PLUGIN_VERSION "22w41a"
 //#define PLUGIN_DEBUG
 
 public Plugin myinfo = {
@@ -145,12 +145,6 @@ public void OnLibraryAdded(const char[] name) {
 public void OnLibraryRemoved(const char[] name) {
 	if (StrEqual(name, "pvpoptin")) { depOptInPvP = false; }
 }
-
-//public Action OnLevelInit(const char[] mapName, char mapEntities[2097152]) {
-//	bPuzzleMap = (StrContains(mapName, "puzzle_")>=0);
-//	return (bPuzzleMap && ScanOutputs(mapEntities)) ? Plugin_Changed : Plugin_Continue;
-//}
-
 
 public void OnMapStart() {
 	PrecacheModel(DUMMY_MODEL);
@@ -346,7 +340,7 @@ public Action OnNotifyGravihandsActive(Handle timer) {
 /** convar **/
 
 void CreateConvars() {
-	ConVar version = CreateConVar("tf2gravihands_version", PLUGIN_VERSION, "TF2 Puzzle Version", FCVAR_NOTIFY|FCVAR_DONTRECORD);
+	ConVar version = CreateConVar("tf2gravihands_version", PLUGIN_VERSION, "TF2 Gravity Hands Version", FCVAR_NOTIFY|FCVAR_DONTRECORD);
 	version.AddChangeHook(OnCVarLockedChange);
 	
 	cvarGraviHandsMaxWeight = CreateConVar("tf2gravihands_maxmass", "250.0", _, _, true, 0.0);

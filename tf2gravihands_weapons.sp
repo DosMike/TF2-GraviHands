@@ -62,20 +62,23 @@ int EquipPlayerMelee(int client, int definitionIndex, int level=9000, int qualit
 }
 
 bool HolsterMelee(int client) {
-	if (!IsValidClient(client, false))
+	if (!IsValidClient(client, false)) {
 		return false; //not for bots
-	if (player[client].holsteredWeapon != INVALID_ITEM_DEFINITION) 
+	}
+	if (player[client].holsteredWeapon != INVALID_ITEM_DEFINITION) {
 		return false; //already holstered
-	if (player[client].weaponsStripped)
+	}
+	if (player[client].weaponsStripped) {
 		return false; //wow hey, don't holster grav hands
+	}
 	
 	int active = Client_GetActiveWeapon(client);
-	int melee = GetPlayerWeaponSlot(client, TFWeaponSlot_Melee);
+	int melee = Client_GetWeaponBySlot(client, TFWeaponSlot_Melee);
 	bool switchTo = (melee == INVALID_ENT_REFERENCE || active != melee); //if melee was not active switch, to holster guns
-	int holsterIndex = melee == INVALID_ENT_REFERENCE 
-		? INVALID_ITEM_DEFINITION
-		: GetEntProp(melee, Prop_Send, "m_iItemDefinitionIndex");
-	
+	int holsterIndex = INVALID_ITEM_DEFINITION;
+	if (melee != INVALID_ENT_REFERENCE) { 
+		holsterIndex = GetEntProp(melee, Prop_Send, "m_iItemDefinitionIndex");
+	}
 	if ((GetClientButtons(client) & (IN_ATTACK|IN_ATTACK2))!=0) {
 		//holstering while healing someone breaks the medic beam (infinite heal)
 		PrintToChat(client, "[SM] You can not holster while holding attack buttons!");
@@ -101,7 +104,7 @@ bool HolsterMelee(int client) {
 	//needs to be set after Equip call due to event order
 	player[client].holsteredWeapon = holsterIndex;
 	if (switchTo) Client_SetActiveWeapon(client, fists);
-		
+	
 	NotifyWeaponHolsterPost(client, holsterIndex);
 	return true;
 }
@@ -113,13 +116,15 @@ void UnholsterMelee(int client) {
 	RequestFrame(ActualUnholsterMelee, client);
 }
 void ActualUnholsterMelee(int client) {
-	if (!IsValidClient(client, false))
+	if (!IsValidClient(client, false)) {
 		return; //not for bots
-	if (player[client].holsteredWeapon == INVALID_ITEM_DEFINITION || player[client].weaponsStripped)
+	}
+	if (player[client].holsteredWeapon == INVALID_ITEM_DEFINITION || player[client].weaponsStripped) {
 		return; //no weapon holstered
-	
-	if (!NotifyWeaponUnholster(client, player[client].holsteredWeapon))
+	}
+	if (!NotifyWeaponUnholster(client, player[client].holsteredWeapon)) {
 		return; //was cancelled
+	}
 	
 	int restore = player[client].holsteredWeapon;
 	player[client].holsteredWeapon = INVALID_ITEM_DEFINITION;
@@ -130,6 +135,7 @@ void ActualUnholsterMelee(int client) {
 			player[client].holsteredAttributeCount,
 			player[client].holsteredAttributeIds,
 			player[client].holsteredAttributeValues);
+		player[client].holsteredWeapon = INVALID_ITEM_DEFINITION;
 	}
 	NotifyWeaponUnholsterPost(client, restore, false);
 }
