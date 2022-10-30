@@ -34,7 +34,7 @@
 #pragma newdecls required
 #pragma semicolon 1
 
-#define PLUGIN_VERSION "22w41a"
+#define PLUGIN_VERSION "22w43a"
 //#define PLUGIN_DEBUG
 
 public Plugin myinfo = {
@@ -253,12 +253,6 @@ public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3
 		float velocity[3];
 		Entity_GetAbsVelocity(client, velocity);
 		clientCmdHoldProp(client, buttons, velocity, angles);
-		
-		if (buttons&IN_ATTACK2) {
-			//don't charge or cloak or do other things while using hands
-			buttons &=~ IN_ATTACK2;
-			changed = true;
-		}
 	} else if (player[client].weaponsStripped) {
 		if (buttons & (IN_ATTACK|IN_ATTACK2|IN_ATTACK3)) {
 			buttons &=~ (IN_ATTACK|IN_ATTACK2|IN_ATTACK3);
@@ -502,6 +496,7 @@ public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max
 	CreateNative("TF2GH_GetGraviHandsHeldEntity", NativeGetGraviHandsEntity);
 	CreateNative("TF2GH_ForceGraviHandsDropEntity", NativeDropGraviHandsEntity);
 	CreateNative("TF2GH_PreventClientAPosing", NativePreventAPosing);
+	CreateNative("TF2GH_SetClientWeaponHolster", NativeHolsterWeapon);
 	RegPluginLibrary("tf2gravihands");
 }
 public any NativeGetPlayerHolster(Handle plugin, int numParams) {
@@ -533,4 +528,20 @@ public any NativePreventAPosing(Handle plugin, int numPrams) {
 	if (!(1<=client<=MaxClients)||!IsClientInGame(client)||!IsPlayerAlive(client))
 		ThrowNativeError(SP_ERROR_PARAM, "Invalid client or client not alive (client %i)", client);
 	PreventAPosing(client);
+}
+public any NativeHolsterWeapon(Handle plugin, int numParams) {
+	int client = GetNativeCell(1);
+	if (!(1<=client<=MaxClients)||!IsClientInGame(client)||!IsPlayerAlive(client))
+		ThrowNativeError(SP_ERROR_PARAM, "Invalid client or client not alive (client %i)", client);
+	
+	if (player[client].weaponsStripped) return; //can not holster right now
+	
+	bool doHolster = GetNativeCell(2)!=0;
+	bool isHolstered = player[client].holsteredWeapon != INVALID_ITEM_DEFINITION;
+	
+	if (doHolster && !isHolstered) {
+		HolsterMelee(client);
+	} else if (!doHolster && isHolstered) {
+		UnholsterMelee(client);
+	}
 }

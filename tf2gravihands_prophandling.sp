@@ -36,6 +36,8 @@ enum struct GraviPropData {
 	float nextPickup;
 	int lastInteractedEnt;
 	float lastInteractedTime;
+	bool attack2; //since we suppress all buttons while hands are used, we need to track that separately
+	int justDropped; //prevent instant re-pickup
 	
 	void Reset() {
 		this.rotProxyEnt = INVALID_ENT_REFERENCE;
@@ -48,6 +50,8 @@ enum struct GraviPropData {
 		this.playNextAction = 0.0;
 		this.lastAudibleAction = 0;
 		this.nextPickup = 0.0;
+		this.attack2 = false;
+		this.justDropped = INVALID_ENT_REFERENCE;
 	}
 }
 GraviPropData GravHand[MAXPLAYERS+1];
@@ -155,37 +159,39 @@ static bool movementCollides(int client, float endpos[3], bool onlyTarget) {
  * This only gets call if isMeleeGravHands in OnPlayerRunCmd, so this does not 
  * have to check if gravity hands are out.
  */
-bool clientCmdHoldProp(int client, int &buttons, float velocity[3], float angles[3]) {
-	if ((buttons & IN_ATTACK2) && !GravHand[client].forceDropProp) {
-		if (GetEntPropFloat(client, Prop_Send, "m_flNextAttack") - GetGameTime() < 0.1) {
-			SetEntPropFloat(client, Prop_Send, "m_flNextAttack", GetGameTime() + 0.5);
-		}
-		float clientTime = GetClientTime(client);
-		if (GravHand[client].nextPickup - clientTime > 0) return false;
-		
-		int grabbed = EntRefToEntIndex(GravHand[client].grabbedEnt);
-		//grabbing
-		if (grabbed == INVALID_ENT_REFERENCE) { //try to pick up cursorEnt
-			if (!(gGraviHandsGrabDistance>0.0 && TryPickupCursorEnt(client, angles)) &&
-				!(gGraviHandsPullDistance>0.0 && TryPullCursorEnt(client, angles)) ) {
-				//couldn't pull or grab? give it a small cooldown
-				GravHand[client].nextPickup = GetClientTime(client) + 0.5;
-				//let the sound replay for pulling
-				GravHand[client].lastInteractedEnt = INVALID_ENT_REFERENCE;
-				//if another sound already played, nothing will happen
-				PlayActionSound(client, GH_ACTION_INVALID);
-				return false;
-			}
+bool clientCmdHoldProp(int client, int buttons, float velocity[3], float angles[3]) {
+	int grabbed = INVALID_ENT_REFERENCE;
+	if (GravHand[client].grabbedEnt!=INVALID_ENT_REFERENCE) grabbed = EntRefToEntIndex(GravHand[client].grabbedEnt);
+	
+	bool atk2held = !!(buttons & IN_ATTACK2);
+	//rotate this value
+	bool atk2prev = GravHand[client].attack2;
+	GravHand[client].attack2 = atk2held;
+	bool atk2in = atk2held && !atk2prev;
+	
+	if (grabbed != INVALID_ENT_REFERENCE) {
+		//detect "down edge"
+		if (atk2in || !!(buttons & IN_ATTACK) || GravHand[client].forceDropProp) {
+			SetEntPropFloat(client, Prop_Send, "m_flNextAttack", GetGameTime());
+			//drop anything held
+			return ForceDropItem(client, (buttons & IN_ATTACK) && !GravHand[client].forceDropProp, velocity, angles);
 		} else {
 			ThinkHeldProp(client, grabbed, buttons, angles);
 		}
-		return true;
-	} else if (!(buttons & IN_ATTACK2)) {
-		SetEntPropFloat(client, Prop_Send, "m_flNextAttack", GetGameTime());
-		buttons &=~ IN_ATTACK2;
+	} else if (!GravHand[client].forceDropProp && atk2held) {
+		if (!(gGraviHandsGrabDistance>0.0 && TryPickupCursorEnt(client, angles)) &&
+			!(gGraviHandsPullDistance>0.0 && TryPullCursorEnt(client, angles)) ) {
+			//couldn't pull or grab? give it a small cooldown
+			GravHand[client].nextPickup = GetClientTime(client) + 0.5;
+			//let the sound replay for pulling
+			GravHand[client].lastInteractedEnt = INVALID_ENT_REFERENCE;
+			//if another sound already played, nothing will happen
+			PlayActionSound(client, GH_ACTION_INVALID);
+			return false;
+		}
 	}
-	//drop anything held
-	return ForceDropItem(client, buttons & IN_ATTACK && GravHand[client].forceDropProp, velocity, angles);
+	if (!atk2held) { GravHand[client].justDropped = INVALID_ENT_REFERENCE; }
+	return true;
 }
 
 #define PickupFlag_MotionDisabled 0x01
@@ -196,9 +202,8 @@ bool clientCmdHoldProp(int client, int &buttons, float velocity[3], float angles
 static bool TryPickupCursorEnt(int client, float yawAngle[3]) {
 	float endpos[3], killVelocity[3];
 	int cursorEnt = pew(client, endpos, gGraviHandsGrabDistance);
-	if (cursorEnt == INVALID_ENT_REFERENCE) {
-		return false;
-	}
+	if (cursorEnt == INVALID_ENT_REFERENCE || EntRefToEntIndex(GravHand[client].justDropped) == cursorEnt) return false;
+	
 	int rotProxy = getOrCreateProxyEnt(client, endpos);
 	
 	//check if cursor is a entity we can grab
@@ -404,6 +409,7 @@ bool ForceDropItem(int client, bool punt=false, const float dvelocity[3]=NULL_VE
 		}
 		//reset ref because we're nice
 		Entity_SetCollisionGroup(entity, GravHand[client].collisionFlags);
+		GravHand[client].justDropped = GravHand[client].grabbedEnt;
 		GravHand[client].grabbedEnt = INVALID_ENT_REFERENCE;
 		NotifyGraviHandsDropped(client, entity, didPunt);
 		GravHand[client].nextPickup = GetClientTime(client) + (punt?0.5:0.1);

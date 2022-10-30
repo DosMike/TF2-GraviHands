@@ -167,9 +167,9 @@ bool IsActiveWeaponHolster(int client, int& weapon=INVALID_ENT_REFERENCE) {
 void PreventAPosing(int client) {
 	if (Client_GetActiveWeapon(client) != INVALID_ENT_REFERENCE) return;
 	for (int slot=0;slot<5;slot++) {
-		int weapon = Client_GetWeaponBySlot(client, slot);
+		int weapon = GetPlayerWeaponSlot(client, slot);
 		if (weapon != INVALID_ENT_REFERENCE) {
-			Client_SetActiveWeapon(client, slot);
+			Client_SetActiveWeapon(client, weapon);
 			return;
 		}
 	}

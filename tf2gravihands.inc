@@ -3,8 +3,8 @@
 #endif
 #define _tf2_gravihands
 
-#define GRAVIHANDS_VERSION "22w41a"
-#define GRAVIHANDS_BUILD   224101
+#define GRAVIHANDS_VERSION "22w43a"
+#define GRAVIHANDS_BUILD   224301
 
 /**
  * There are two flags that might not be immediately obvious:
@@ -101,7 +101,11 @@ forward void TF2GH_OnClientUnholsterWeaponPost(int client, int itemDefinition, b
  * @param client - the client to query
  * @return the item definition index or -1 if no melee is holstered
  */
-native int TF2GH_GetClientHoslteredWeapon(int client);
+native int TF2GH_GetClientWeaponHoslter(int client);
+#pragma deprecated Use TF2GH_GetClientWeaponHoslter instead
+static int TF2GH_GetClientHoslteredWeapon(int client) {
+	return TF2GH_GetClientWeaponHoslter(client);
+}
 
 /**
  * Called when a player tries to pick up a prop_physics_* or a func_physbox.
@@ -158,6 +162,16 @@ native void TF2GH_ForceGraviHandsDropEntity(int client, bool punt=false);
  */
 native void TF2GH_PreventClientAPosing(int client);
 
+/**
+ * Force a client to put away their weapon. If you want to disarm a player without them A-Posing
+ * you should remove all weapons and call TF2GH_PreventClientAPosing(client) instead.
+ * 
+ * @param client - the client to force in or out of holster state
+ * @param active - true to put the weapons away, false to un-holster
+ */
+native void TF2GH_SetClientWeaponHolster(int client, bool active);
+
+
 public SharedPlugin:__pl_tf2gravihands = {
 	name = "tf2gravihands",
 	file = "tf2gravihands.smx",
@@ -171,9 +185,10 @@ public SharedPlugin:__pl_tf2gravihands = {
 
 #if !defined REQUIRE_PLUGIN
 public __pl_tf2gravihands_SetNTVOptional() {
-	MarkNativeAsOptional("TF2GH_GetClientHoslteredWeapon");
+	MarkNativeAsOptional("TF2GH_GetClientWeaponHoslter");
 	MarkNativeAsOptional("TF2GH_GetGraviHandsHeldEntity");
 	MarkNativeAsOptional("TF2GH_ForceGraviHandsDropEntity");
 	MarkNativeAsOptional("TF2GH_PreventClientAPosing");
+	MarkNativeAsOptional("TF2GH_SetClientWeaponHolster");
 }
 #endif
