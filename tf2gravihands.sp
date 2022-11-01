@@ -34,7 +34,7 @@
 #pragma newdecls required
 #pragma semicolon 1
 
-#define PLUGIN_VERSION "22w43a"
+#define PLUGIN_VERSION "22w44a"
 //#define PLUGIN_DEBUG
 
 public Plugin myinfo = {
@@ -240,6 +240,7 @@ public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3
 	int activeWeapon = Client_GetActiveWeapon(client);
 	bool isMeleeActive = activeWeapon != INVALID_ENT_REFERENCE && Client_GetWeaponBySlot(client, TFWeaponSlot_Melee) == activeWeapon;
 	bool isMeleeGravHands = isMeleeActive && IsActiveWeaponHolster(client, activeWeapon);
+	bool suppressButtons = player[client].weaponsStripped!=0;
 	if ((buttons & IN_ATTACK3) && !(player[client].previousButtons & IN_ATTACK3) && isMeleeActive) {
 		//pressed down on mouse3 while ative weapon == melee (and there is a melee)
 		// -> use this to /holster
@@ -253,13 +254,12 @@ public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3
 		float velocity[3];
 		Entity_GetAbsVelocity(client, velocity);
 		clientCmdHoldProp(client, buttons, velocity, angles);
-	} else if (player[client].weaponsStripped) {
-		if (buttons & (IN_ATTACK|IN_ATTACK2|IN_ATTACK3)) {
-			buttons &=~ (IN_ATTACK|IN_ATTACK2|IN_ATTACK3);
-			changed = true;
-		}
+		suppressButtons = true;
 	}
-	
+	if (suppressButtons && (buttons & (IN_ATTACK|IN_ATTACK2|IN_ATTACK3))) {
+		buttons &=~ (IN_ATTACK|IN_ATTACK2|IN_ATTACK3);
+		changed = true;
+	}
 	return changed?Plugin_Changed:Plugin_Continue;
 }
 public void OnPlayerRunCmdPost(int client, int buttons, int impulse, const float vel[3], const float angles[3], int weapon, int subtype, int cmdnum, int tickcount, int seed, const int mouse[2]) {
@@ -329,7 +329,6 @@ public Action OnNotifyGravihandsActive(Handle timer) {
 	}
 	return Plugin_Continue;
 }
-
 
 /** convar **/
 

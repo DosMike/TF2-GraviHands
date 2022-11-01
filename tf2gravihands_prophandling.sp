@@ -159,7 +159,7 @@ static bool movementCollides(int client, float endpos[3], bool onlyTarget) {
  * This only gets call if isMeleeGravHands in OnPlayerRunCmd, so this does not 
  * have to check if gravity hands are out.
  */
-bool clientCmdHoldProp(int client, int buttons, float velocity[3], float angles[3]) {
+bool clientCmdHoldProp(int client, int& buttons, float velocity[3], float angles[3]) {
 	int grabbed = INVALID_ENT_REFERENCE;
 	if (GravHand[client].grabbedEnt!=INVALID_ENT_REFERENCE) grabbed = EntRefToEntIndex(GravHand[client].grabbedEnt);
 	
@@ -172,9 +172,10 @@ bool clientCmdHoldProp(int client, int buttons, float velocity[3], float angles[
 	if (grabbed != INVALID_ENT_REFERENCE) {
 		//detect "down edge"
 		if (atk2in || !!(buttons & IN_ATTACK) || GravHand[client].forceDropProp) {
-			SetEntPropFloat(client, Prop_Send, "m_flNextAttack", GetGameTime());
 			//drop anything held
-			return ForceDropItem(client, (buttons & IN_ATTACK) && !GravHand[client].forceDropProp, velocity, angles);
+			ForceDropItem(client, (buttons & IN_ATTACK) && !GravHand[client].forceDropProp, velocity, angles);
+			buttons &=~ IN_ATTACK2;
+			return true;
 		} else {
 			ThinkHeldProp(client, grabbed, buttons, angles);
 		}
