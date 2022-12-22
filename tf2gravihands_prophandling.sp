@@ -15,11 +15,15 @@
 #define GH_SOUND_TOOHEAVY "weapons/physcannon/physcannon_tooheavy.wav"
 #define GH_SOUND_INVALID "weapons/physcannon/physcannon_dryfire.wav"
 #define GH_SOUND_THROW "weapons/physcannon/superphys_launch1.wav"
+#define GH_SOUND_FIZZLED "weapons/physcannon/energy_disintegrate4.wav"
+#define GH_SOUND_HOLD "weapons/physcannon/hold_loop.wav"
 #define GH_ACTION_PICKUP 1
 #define GH_ACTION_DROP 2
 #define GH_ACTION_TOOHEAVY 3
 #define GH_ACTION_INVALID 4
 #define GH_ACTION_THROW 5
+#define GH_ACTION_FIZZLED 6
+#define GH_ACTION_HOLD 7
 
 enum struct GraviPropData {
 	int rotProxyEnt;
@@ -36,7 +40,6 @@ enum struct GraviPropData {
 	float nextPickup;
 	int lastInteractedEnt;
 	float lastInteractedTime;
-	bool attack2; //since we suppress all buttons while hands are used, we need to track that separately
 	int justDropped; //prevent instant re-pickup
 	
 	void Reset() {
@@ -50,7 +53,6 @@ enum struct GraviPropData {
 		this.playNextAction = 0.0;
 		this.lastAudibleAction = 0;
 		this.nextPickup = 0.0;
-		this.attack2 = false;
 		this.justDropped = INVALID_ENT_REFERENCE;
 	}
 }
@@ -165,8 +167,7 @@ bool clientCmdHoldProp(int client, int& buttons, float velocity[3], float angles
 	
 	bool atk2held = !!(buttons & IN_ATTACK2);
 	//rotate this value
-	bool atk2prev = GravHand[client].attack2;
-	GravHand[client].attack2 = atk2held;
+	bool atk2prev = !!(player[client].previousButtons & IN_ATTACK2);
 	bool atk2in = atk2held && !atk2prev;
 	
 	if (grabbed != INVALID_ENT_REFERENCE) {
@@ -182,14 +183,16 @@ bool clientCmdHoldProp(int client, int& buttons, float velocity[3], float angles
 	} else if (!GravHand[client].forceDropProp && atk2held) {
 		if (!(gGraviHandsGrabDistance>0.0 && TryPickupCursorEnt(client, angles)) &&
 			!(gGraviHandsPullDistance>0.0 && TryPullCursorEnt(client, angles)) ) {
-			//couldn't pull or grab? give it a small cooldown
-			GravHand[client].nextPickup = GetClientTime(client) + 0.5;
 			//let the sound replay for pulling
 			GravHand[client].lastInteractedEnt = INVALID_ENT_REFERENCE;
 			//if another sound already played, nothing will happen
 			PlayActionSound(client, GH_ACTION_INVALID);
 			return false;
 		}
+	} else if (grabbed == INVALID_ENT_REFERENCE && GravHand[client].grabbedEnt != INVALID_ENT_REFERENCE) {
+		//the entity was deleted, no sound is weird
+		PlayActionSound(client, GH_ACTION_FIZZLED);
+		GravHand[client].grabbedEnt = INVALID_ENT_REFERENCE;
 	}
 	if (!atk2held) { GravHand[client].justDropped = INVALID_ENT_REFERENCE; }
 	return true;
@@ -201,6 +204,9 @@ bool clientCmdHoldProp(int client, int& buttons, float velocity[3], float angles
 #define PickupFlag_BlockPunting 0x100
 #define PickupFlag_EnableMotion 0x200
 static bool TryPickupCursorEnt(int client, float yawAngle[3]) {
+	//this is too early
+	if (GetClientTime(client) < GravHand[client].nextPickup) return false;
+	
 	float endpos[3], killVelocity[3];
 	int cursorEnt = pew(client, endpos, gGraviHandsGrabDistance);
 	if (cursorEnt == INVALID_ENT_REFERENCE || EntRefToEntIndex(GravHand[client].justDropped) == cursorEnt) return false;
@@ -325,6 +331,10 @@ static bool TryPullCursorEnt(int client, float yawAngle[3]) {
 		!StrEqual(classname, "tf_dropped_weapon") && !StrEqual(classname, "tf_ammo_pack")) {
 		return false;
 	}
+	//don't pull props right after dropping
+	if (GetClientTime(client) < GravHand[client].nextPickup) {
+		return false;
+	}
 	
 	GetAngleVectors(yawAngle, force, NULL_VECTOR, NULL_VECTOR);
 	GetClientEyePosition(client, eyePos);
@@ -373,6 +383,7 @@ static void ThinkHeldProp(int client, int grabbed, int buttons, float yawAngle[3
 		}
 		GravHand[client].lastInteractedEnt = EntIndexToEntRef(grabbed);
 		GravHand[client].lastInteractedTime = GetGameTime();
+		PlayActionSound(client, GH_ACTION_HOLD);
 	}
 }
 
@@ -413,6 +424,7 @@ bool ForceDropItem(int client, bool punt=false, const float dvelocity[3]=NULL_VE
 		GravHand[client].justDropped = GravHand[client].grabbedEnt;
 		GravHand[client].grabbedEnt = INVALID_ENT_REFERENCE;
 		NotifyGraviHandsDropped(client, entity, didPunt);
+		GravHand[client].lastInteractedTime = GetGameTime();
 		GravHand[client].nextPickup = GetClientTime(client) + (punt?0.5:0.1);
 		//play sound
 		PlayActionSound(client,didPunt?GH_ACTION_THROW:GH_ACTION_DROP);
@@ -432,26 +444,39 @@ bool ForceDropItem(int client, bool punt=false, const float dvelocity[3]=NULL_VE
 void PlayActionSound(int client, int sound) {
 	float ct = GetClientTime(client);
 	if (GravHand[client].lastAudibleAction != sound || GravHand[client].playNextAction - ct < 0) {
+		if (GravHand[client].lastAudibleAction == GH_ACTION_HOLD && sound != GH_ACTION_HOLD) {
+			//hold-loop sound interruption
+			StopSound(client, SNDCHAN_WEAPON, GH_SOUND_HOLD);
+		}
 		switch (sound) {
 			case GH_ACTION_PICKUP: {
-				EmitSoundToAll(GH_SOUND_PICKUP, client);
+				EmitSoundToAll(GH_SOUND_PICKUP, client, SNDCHAN_AUTO);
 				GravHand[client].playNextAction = ct + 1.5;
 			}
 			case GH_ACTION_DROP: {
-				EmitSoundToAll(GH_SOUND_DROP, client);
+				EmitSoundToAll(GH_SOUND_DROP, client, SNDCHAN_AUTO);
 				GravHand[client].playNextAction = ct + 1.5;
 			}
 			case GH_ACTION_TOOHEAVY: {
-				EmitSoundToAll(GH_SOUND_TOOHEAVY, client);
+				EmitSoundToAll(GH_SOUND_TOOHEAVY, client, SNDCHAN_AUTO);
 				GravHand[client].playNextAction = ct + 1.5;
 			}
 			case GH_ACTION_INVALID: {
-				EmitSoundToAll(GH_SOUND_INVALID, client);
+				EmitSoundToAll(GH_SOUND_INVALID, client, SNDCHAN_AUTO);
 				GravHand[client].playNextAction = ct + 0.5;
 			}
 			case GH_ACTION_THROW: {
-				EmitSoundToAll(GH_SOUND_THROW, client);
+				EmitSoundToAll(GH_SOUND_THROW, client, SNDCHAN_AUTO);
 				GravHand[client].playNextAction = ct + 0.5;
+			}
+			case GH_ACTION_FIZZLED: {
+				EmitSoundToClient(client, GH_SOUND_FIZZLED, _, SNDCHAN_AUTO, _, _, 0.33);
+				GravHand[client].playNextAction = ct + 0.5;
+			}
+			case GH_ACTION_HOLD: {
+				if (GravHand[client].lastAudibleAction != GH_ACTION_HOLD)
+					EmitSoundToClient(client, GH_SOUND_HOLD, _, SNDCHAN_WEAPON, _, _, 0.66);
+				GravHand[client].playNextAction = ct + 2.0; //loops with cue-points
 			}
 			default: {
 				GravHand[client].playNextAction = ct + 1.5;

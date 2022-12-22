@@ -34,7 +34,7 @@
 #pragma newdecls required
 #pragma semicolon 1
 
-#define PLUGIN_VERSION "22w44a"
+#define PLUGIN_VERSION "22w51a"
 //#define PLUGIN_DEBUG
 
 public Plugin myinfo = {
@@ -153,6 +153,8 @@ public void OnMapStart() {
 	PrecacheSound(GH_SOUND_INVALID);
 	PrecacheSound(GH_SOUND_TOOHEAVY);
 	PrecacheSound(GH_SOUND_THROW);
+	PrecacheSound(GH_SOUND_FIZZLED);
+	PrecacheSound(GH_SOUND_HOLD);
 	CreateTimer(1.0, OnNotifyGravihandsActive, _, TIMER_REPEAT|TIMER_FLAG_NO_MAPCHANGE);
 }
 
@@ -241,6 +243,8 @@ public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3
 	bool isMeleeActive = activeWeapon != INVALID_ENT_REFERENCE && Client_GetWeaponBySlot(client, TFWeaponSlot_Melee) == activeWeapon;
 	bool isMeleeGravHands = isMeleeActive && IsActiveWeaponHolster(client, activeWeapon);
 	bool suppressButtons = player[client].weaponsStripped!=0;
+	int actualButtons = buttons;
+	
 	if ((buttons & IN_ATTACK3) && !(player[client].previousButtons & IN_ATTACK3) && isMeleeActive) {
 		//pressed down on mouse3 while ative weapon == melee (and there is a melee)
 		// -> use this to /holster
@@ -260,11 +264,9 @@ public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3
 		buttons &=~ (IN_ATTACK|IN_ATTACK2|IN_ATTACK3);
 		changed = true;
 	}
+	
+	player[client].previousButtons = actualButtons;
 	return changed?Plugin_Changed:Plugin_Continue;
-}
-public void OnPlayerRunCmdPost(int client, int buttons, int impulse, const float vel[3], const float angles[3], int weapon, int subtype, int cmdnum, int tickcount, int seed, const int mouse[2]) {
-	if (!IsValidClient(client)) return;
-	player[client].previousButtons = buttons;
 }
 
 
@@ -497,6 +499,7 @@ public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max
 	CreateNative("TF2GH_PreventClientAPosing", NativePreventAPosing);
 	CreateNative("TF2GH_SetClientWeaponHolster", NativeHolsterWeapon);
 	RegPluginLibrary("tf2gravihands");
+	return APLRes_Success;
 }
 public any NativeGetPlayerHolster(Handle plugin, int numParams) {
 	int client = GetNativeCell(1);
@@ -511,7 +514,7 @@ public any NativeGetGraviHandsEntity(Handle plugin, int numParams) {
 public any NativeDropGraviHandsEntity(Handle plugin, int numParams) {
 	int client = GetNativeCell(1);
 	bool punt = GetNativeCell(2);
-	if (!IsValidClient(client) || GravHand[client].forceDropProp || GravHand[client].grabbedEnt == INVALID_ENT_REFERENCE) return;
+	if (!IsValidClient(client) || GravHand[client].forceDropProp || GravHand[client].grabbedEnt == INVALID_ENT_REFERENCE) return 0;
 	float vel[3];
 	Entity_GetAbsVelocity(client, vel);
 	if (punt) {
@@ -521,19 +524,21 @@ public any NativeDropGraviHandsEntity(Handle plugin, int numParams) {
 	} else {
 		ForceDropItem(client, false, vel);
 	}
+	return 0;
 }
 public any NativePreventAPosing(Handle plugin, int numPrams) {
 	int client = GetNativeCell(1);
 	if (!(1<=client<=MaxClients)||!IsClientInGame(client)||!IsPlayerAlive(client))
 		ThrowNativeError(SP_ERROR_PARAM, "Invalid client or client not alive (client %i)", client);
 	PreventAPosing(client);
+	return 0;
 }
 public any NativeHolsterWeapon(Handle plugin, int numParams) {
 	int client = GetNativeCell(1);
 	if (!(1<=client<=MaxClients)||!IsClientInGame(client)||!IsPlayerAlive(client))
 		ThrowNativeError(SP_ERROR_PARAM, "Invalid client or client not alive (client %i)", client);
 	
-	if (player[client].weaponsStripped) return; //can not holster right now
+	if (player[client].weaponsStripped) return 0; //can not holster right now
 	
 	bool doHolster = GetNativeCell(2)!=0;
 	bool isHolstered = player[client].holsteredWeapon != INVALID_ITEM_DEFINITION;
@@ -543,4 +548,5 @@ public any NativeHolsterWeapon(Handle plugin, int numParams) {
 	} else if (!doHolster && isHolstered) {
 		UnholsterMelee(client);
 	}
+	return 0;
 }

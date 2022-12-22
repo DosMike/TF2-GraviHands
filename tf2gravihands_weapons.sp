@@ -11,7 +11,7 @@
 // some stuff uses negative levels (like the physgun) as it shows positive but can mark custom weapons
 // quality afaik is always positive
 int EquipPlayerMelee(int client, int definitionIndex, int level=9000, int quality=-1,
-			int attribCount=0, int customAttribIds[]={}, any customAttribVals[]={}) {
+			int attribCount=0, int[] customAttribIds={}, any[] customAttribVals={}) {
 	if (!TF2Econ_IsValidItemDefinition(definitionIndex))
 		ThrowError("Definition index %d is invalid", definitionIndex);
 	
@@ -35,11 +35,11 @@ int EquipPlayerMelee(int client, int definitionIndex, int level=9000, int qualit
 	Handle weapon = TF2Items_CreateItem(flags);
 	TF2Items_SetLevel(weapon, level>=0?level:0);
 	TF2Items_SetQuality(weapon, quality);
-//	TF2Items_SetNumAttributes(weapon, attribCount);
-//	for (int a; a<attribCount; a++) {
-//		TF2Items_SetAttribute(weapon, a, customAttribIds[a], customAttribVals[a]);
-//	}
-	TF2Items_SetNumAttributes(weapon, 0);
+	TF2Items_SetNumAttributes(weapon, attribCount);
+	for (int a; a<attribCount; a++) {
+		TF2Items_SetAttribute(weapon, a, customAttribIds[a], customAttribVals[a]);
+	}
+//	TF2Items_SetNumAttributes(weapon, 0);
 	TF2Items_SetItemIndex(weapon, definitionIndex);
 	TF2Items_SetClassname(weapon, class);
 	
