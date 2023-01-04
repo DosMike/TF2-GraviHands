@@ -110,6 +110,8 @@ bool HolsterMelee(int client) {
 }
 
 void UnholsterMelee(int client) {
+	//dont get stuff stuck when we switch away
+	ForceDropItem(client);
 	//doing this immediately causes too many issues with regenerating inventories
 	//an unholster as in an actual unholster will always be manual and thus
 	//does not require tick precision

@@ -213,6 +213,8 @@ public Action OnClientWeaponEquip(int client, int weapon) {
 	int iindex = GetEntProp(weapon, Prop_Send, "m_iItemDefinitionIndex");
 	int slot = TF2Econ_GetItemDefaultLoadoutSlot(iindex);
 	if (slot == TFWeaponSlot_Melee && player[client].holsteredWeapon != INVALID_ITEM_DEFINITION) {
+		//dont get stuff stuck when we switch away
+		ForceDropItem(client);
 		//equipped melee while melee was holstered
 		DropHolsteredMelee(client);
 	}

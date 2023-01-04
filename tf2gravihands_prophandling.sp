@@ -307,7 +307,7 @@ static bool TryPickupCursorEnt(int client, float yawAngle[3]) {
 	GravHand[client].previousEnd = endpos;
 	GravHand[client].dontCheckStartPost = movementCollides(client, endpos, true);
 	GravHand[client].collisionFlags = Entity_GetCollisionGroup(cursorEnt);
-	Entity_SetCollisionGroup(cursorEnt, COLLISION_GROUP_DEBRIS_TRIGGER);
+	SetEntityCollisionGroup(cursorEnt, view_as<int>(COLLISION_GROUP_DEBRIS_TRIGGER));
 	GravHand[client].lastInteractedEnt = GravHand[client].grabbedEnt;
 	GravHand[client].lastInteractedTime = GetGameTime();
 	//sound
@@ -350,7 +350,7 @@ static bool TryPullCursorEnt(int client, float yawAngle[3]) {
 	float forceScale = normalizedDistance * forceRange + gGraviHandsPullForceFar; //scaled over range + min
 	ScaleVector(force, -forceScale);
 	Phys_GetEnvironmentGravity(grav);
-	ScaleVector(grav, 0.8); //full gravity feels a bit much
+	ScaleVector(grav, 0.8*normalizedDistance); //full gravity feels a bit much
 	SubtractVectors(force, grav, force);
 	Phys_ApplyForceCenter(entity, force);
 //	Phys_ApplyForceOffset(entity, force, target); //does weird stuff :o
@@ -420,7 +420,7 @@ bool ForceDropItem(int client, bool punt=false, const float dvelocity[3]=NULL_VE
 				FireEntityOutput(entity, punt?"OnPhysGunPunt":"OnPhysGunDrop", client);
 		}
 		//reset ref because we're nice
-		Entity_SetCollisionGroup(entity, GravHand[client].collisionFlags);
+		SetEntityCollisionGroup(entity, view_as<int>(GravHand[client].collisionFlags));
 		GravHand[client].justDropped = GravHand[client].grabbedEnt;
 		GravHand[client].grabbedEnt = INVALID_ENT_REFERENCE;
 		NotifyGraviHandsDropped(client, entity, didPunt);
