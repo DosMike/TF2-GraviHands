@@ -34,7 +34,7 @@
 #pragma newdecls required
 #pragma semicolon 1
 
-#define PLUGIN_VERSION "23w01a"
+#define PLUGIN_VERSION "23w01b"
 //#define PLUGIN_DEBUG
 
 public Plugin myinfo = {
@@ -155,6 +155,7 @@ public void OnMapStart() {
 	PrecacheSound(GH_SOUND_THROW);
 	PrecacheSound(GH_SOUND_FIZZLED);
 	PrecacheSound(GH_SOUND_HOLD);
+	g_tossedTracker = new ArrayList(sizeof(TossedData));
 	CreateTimer(1.0, OnNotifyGravihandsActive, _, TIMER_REPEAT|TIMER_FLAG_NO_MAPCHANGE);
 }
 
@@ -281,7 +282,7 @@ public Action OnPlayerTakeDamage(int victim, int &attacker, int &inflictor, floa
 		return Plugin_Changed;
 	}
 	
-	if (IsValidClient(attacker) && victim != attacker && damagetype & DMG_CLUB) { //melee is using club damage type
+	if (IsValidClient(attacker) && victim != attacker && (damagetype & DMG_CLUB)!=0) { //melee is using club damage type
 		int gun=weapon; //prevent writeback on invalid ent ref
 		if (player[attacker].weaponsStripped || IsActiveWeaponHolster(attacker, gun)) {
 			//this player is currently using gravity hands or is unarmed, don't damage

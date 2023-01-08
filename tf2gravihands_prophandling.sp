@@ -26,6 +26,7 @@
 #define GH_ACTION_HOLD 7
 
 enum struct GraviPropData {
+	//grab entity data
 	int rotProxyEnt;
 	int grabbedEnt;
 	float previousEnd[3]; //allows flinging props
@@ -35,12 +36,14 @@ enum struct GraviPropData {
 	bool forceDropProp;
 	bool blockPunt; //from spawnflags
 	float grabDistance;
+	
+	//"gravity gun sound engine"
 	float playNextAction;
 	int lastAudibleAction;
+	
+	//prevent instant re-pickup
 	float nextPickup;
-	int lastInteractedEnt;
-	float lastInteractedTime;
-	int justDropped; //prevent instant re-pickup
+	int justDropped;
 	
 	void Reset() {
 		this.rotProxyEnt = INVALID_ENT_REFERENCE;
@@ -57,6 +60,48 @@ enum struct GraviPropData {
 	}
 }
 GraviPropData GravHand[MAXPLAYERS+1];
+
+#define TOSSED_TRACKING_TIME 10.0
+enum struct TossedData {
+	int entref;
+	int userid;
+	float timetossed;
+}
+ArrayList g_tossedTracker;
+/** @return client if found or 0 */
+static int GetTossedBy(int entity) {
+	//cleanup timed out data and search entref
+	TossedData data;
+	float now = GetGameTime();
+	int client;
+	for (int idx=g_tossedTracker.Length-1; idx >= 0; idx-=1) {
+		int dataent;
+		g_tossedTracker.GetArray(idx,data);
+		
+		if ((dataent = EntRefToEntIndex(data.entref))==INVALID_ENT_REFERENCE || now-data.timetossed > TOSSED_TRACKING_TIME) {
+			g_tossedTracker.Erase(idx);
+		} else if (dataent == entity) {
+			client = GetClientOfUserId(data.userid);
+		}
+	}
+	return client;
+}
+static bool SetTossedBy(int entity, int client) {
+	if (0 < entity < GetMaxEntities()) entity = EntIndexToEntRef(entity);
+	if (entity == INVALID_ENT_REFERENCE || client <= 0 || client > MaxClients || !IsClientInGame(client)) return false;
+	//remove old data
+	int idx=g_tossedTracker.FindValue(entity);
+	if (idx >= 0) g_tossedTracker.Erase(idx);
+	//insert new data
+	TossedData data;
+	float now = GetGameTime();
+	data.entref = entity;
+	data.userid = GetClientUserId(client);
+	data.timetossed = now;
+	g_tossedTracker.PushArray(data);
+	return true;
+}
+
 
 // if we parent the entity to a dummy, we don't have to care about the offset matrix
 static int getOrCreateProxyEnt(int client, float atPos[3]) {
@@ -183,10 +228,8 @@ bool clientCmdHoldProp(int client, int& buttons, float velocity[3], float angles
 	} else if (!GravHand[client].forceDropProp && atk2held) {
 		if (!(gGraviHandsGrabDistance>0.0 && TryPickupCursorEnt(client, angles)) &&
 			!(gGraviHandsPullDistance>0.0 && TryPullCursorEnt(client, angles)) ) {
-			//let the sound replay for pulling
-			GravHand[client].lastInteractedEnt = INVALID_ENT_REFERENCE;
 			//if another sound already played, nothing will happen
-			PlayActionSound(client, GH_ACTION_INVALID);
+			PlayActionSound(client, GH_ACTION_INVALID, false);
 			return false;
 		}
 	} else if (grabbed == INVALID_ENT_REFERENCE && GravHand[client].grabbedEnt != INVALID_ENT_REFERENCE) {
@@ -308,8 +351,6 @@ static bool TryPickupCursorEnt(int client, float yawAngle[3]) {
 	GravHand[client].dontCheckStartPost = movementCollides(client, endpos, true);
 	GravHand[client].collisionFlags = Entity_GetCollisionGroup(cursorEnt);
 	SetEntityCollisionGroup(cursorEnt, view_as<int>(COLLISION_GROUP_DEBRIS_TRIGGER));
-	GravHand[client].lastInteractedEnt = GravHand[client].grabbedEnt;
-	GravHand[client].lastInteractedTime = GetGameTime();
 	//sound
 	PlayActionSound(client,GH_ACTION_PICKUP);
 	//notify plugins
@@ -356,11 +397,8 @@ static bool TryPullCursorEnt(int client, float yawAngle[3]) {
 //	Phys_ApplyForceOffset(entity, force, target); //does weird stuff :o
 	
 	//play sound
-	if (EntRefToEntIndex(GravHand[client].lastInteractedEnt) != entity) {
-		GravHand[client].lastInteractedEnt = EntIndexToEntRef(entity);
-		PlayActionSound(client, GH_ACTION_TOOHEAVY); //i think that was the same sound?
-	}
-	GravHand[client].lastInteractedTime = GetGameTime();
+	PlayActionSound(client, GH_ACTION_TOOHEAVY);
+	SetTossedBy(entity, client); //yes, track damage even for pulling. also prevents self-damage when bonking your head with it
 	return true;
 }
 
@@ -381,8 +419,6 @@ static void ThinkHeldProp(int client, int grabbed, int buttons, float yawAngle[3
 		} else if (GetVectorDistance(GravHand[client].lastValid, endpos) > gGraviHandsDropDistance) {
 			GravHand[client].forceDropProp = true;
 		}
-		GravHand[client].lastInteractedEnt = EntIndexToEntRef(grabbed);
-		GravHand[client].lastInteractedTime = GetGameTime();
 		PlayActionSound(client, GH_ACTION_HOLD);
 	}
 }
@@ -424,8 +460,8 @@ bool ForceDropItem(int client, bool punt=false, const float dvelocity[3]=NULL_VE
 		GravHand[client].justDropped = GravHand[client].grabbedEnt;
 		GravHand[client].grabbedEnt = INVALID_ENT_REFERENCE;
 		NotifyGraviHandsDropped(client, entity, didPunt);
-		GravHand[client].lastInteractedTime = GetGameTime();
 		GravHand[client].nextPickup = GetClientTime(client) + (punt?0.5:0.1);
+		SetTossedBy(entity, client);
 		//play sound
 		PlayActionSound(client,didPunt?GH_ACTION_THROW:GH_ACTION_DROP);
 		didStuff = true;
@@ -441,9 +477,10 @@ bool ForceDropItem(int client, bool punt=false, const float dvelocity[3]=NULL_VE
 	return didStuff;
 }
 
-void PlayActionSound(int client, int sound) {
+void PlayActionSound(int client, int sound, bool replace=true) {
 	float ct = GetClientTime(client);
-	if (GravHand[client].lastAudibleAction != sound || GravHand[client].playNextAction - ct < 0) {
+	bool played = GravHand[client].playNextAction - ct < 0;
+	if (played || (replace && GravHand[client].lastAudibleAction != sound)) {
 		if (GravHand[client].lastAudibleAction == GH_ACTION_HOLD && sound != GH_ACTION_HOLD) {
 			//hold-loop sound interruption
 			StopSound(client, SNDCHAN_WEAPON, GH_SOUND_HOLD);
@@ -492,26 +529,18 @@ bool FixPhysPropAttacker(int victim, int& attacker, int& inflictor, int& damaget
 		Entity_GetClassName(attacker, classname, sizeof(classname));
 		if (StrEqual(classname, "func_physbox") || StrContains(classname, "prop_physics")==0) {
 			//victim is damaged by physics object, search thrower in our data
-			float time;
-			int thrower=-1;
-			for (int c=1;c<=MaxClients;c++) {
-				if (IsValidClient(c) && EntRefToEntIndex(GravHand[c].lastInteractedEnt) == attacker && GravHand[c].lastInteractedTime > time) {
-					thrower = c;
-					time = GravHand[c].lastInteractedTime;
-				}
-			}
-			if (thrower > 0 && GetGameTime()-time < 7.0) { //we got a thrower, but timeout interactions
+			int thrower = GetTossedBy(attacker);
+			if (thrower > 0) { //we got a thrower, but timeout interactions
 				//rewrite attacker
 				attacker = thrower;
 				//no self damage (a but too easy to do)
 				bool blockDamage = attacker == victim;
 				//I know that this is not the inteded use, but TF2 has no other use either
-				damagetype |= DMG_PHYSGUN;
+				damagetype |= DMG_PHYSGUN|DMG_CRUSH;
 				//pvp plugin integration
 				if (depOptInPvP && !pvp_CanAttack(attacker, victim)) {
 					blockDamage = true;
 				}
-				
 				return blockDamage;
 			}
 		}
