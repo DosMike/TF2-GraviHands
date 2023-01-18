@@ -34,7 +34,7 @@
 #pragma newdecls required
 #pragma semicolon 1
 
-#define PLUGIN_VERSION "23w01b"
+#define PLUGIN_VERSION "23w03a"
 //#define PLUGIN_DEBUG
 
 public Plugin myinfo = {
@@ -257,7 +257,7 @@ public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3
 		} else {
 			PrintToChat(client, "[SM] Holstering is currently not enabled");
 		}
-	} else if (isMeleeGravHands && (gEnabledFeatures & PZ_FEATURE_GRAVIHANDS)) {
+	} else if (isMeleeGravHands && (gEnabledFeatures & PZ_FEATURE_GRAVIHANDS) && !suppressButtons) {
 		float velocity[3];
 		Entity_GetAbsVelocity(client, velocity);
 		clientCmdHoldProp(client, buttons, velocity, angles);
