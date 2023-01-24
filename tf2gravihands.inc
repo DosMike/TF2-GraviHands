@@ -3,8 +3,8 @@
 #endif
 #define _tf2_gravihands
 
-#define GRAVIHANDS_VERSION "22w43a"
-#define GRAVIHANDS_BUILD   224301
+#define GRAVIHANDS_VERSION "23w04a"
+#define GRAVIHANDS_BUILD   230401
 
 /**
  * There are two flags that might not be immediately obvious:
@@ -103,7 +103,7 @@ forward void TF2GH_OnClientUnholsterWeaponPost(int client, int itemDefinition, b
  */
 native int TF2GH_GetClientWeaponHoslter(int client);
 #pragma deprecated Use TF2GH_GetClientWeaponHoslter instead
-static int TF2GH_GetClientHoslteredWeapon(int client) {
+stock int TF2GH_GetClientHoslteredWeapon(int client) {
 	return TF2GH_GetClientWeaponHoslter(client);
 }
 
@@ -171,6 +171,16 @@ native void TF2GH_PreventClientAPosing(int client);
  */
 native void TF2GH_SetClientWeaponHolster(int client, bool active);
 
+/**
+ * check if the player is currently unarmed (no usable weapons, regardless
+ * of wether TF2GH_PreventClientAPosing was called or not).
+ * Note: using gravity hands does not count as unarmed!
+ *
+ * @param client - player to check
+ * @return true if unarmed
+ */
+native bool TF2GH_IsClientUnarmed(int client);
+
 
 public SharedPlugin:__pl_tf2gravihands = {
 	name = "tf2gravihands",
@@ -190,5 +200,6 @@ public __pl_tf2gravihands_SetNTVOptional() {
 	MarkNativeAsOptional("TF2GH_ForceGraviHandsDropEntity");
 	MarkNativeAsOptional("TF2GH_PreventClientAPosing");
 	MarkNativeAsOptional("TF2GH_SetClientWeaponHolster");
+	MarkNativeAsOptional("TF2GH_IsClientUnarmed");
 }
 #endif

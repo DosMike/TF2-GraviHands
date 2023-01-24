@@ -34,7 +34,7 @@
 #pragma newdecls required
 #pragma semicolon 1
 
-#define PLUGIN_VERSION "23w03a"
+#define PLUGIN_VERSION "23w04a"
 //#define PLUGIN_DEBUG
 
 public Plugin myinfo = {
@@ -501,6 +501,7 @@ public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max
 	CreateNative("TF2GH_ForceGraviHandsDropEntity", NativeDropGraviHandsEntity);
 	CreateNative("TF2GH_PreventClientAPosing", NativePreventAPosing);
 	CreateNative("TF2GH_SetClientWeaponHolster", NativeHolsterWeapon);
+	CreateNative("TF2GH_IsClientUnarmed", NativeCheckUnarmed);
 	RegPluginLibrary("tf2gravihands");
 	return APLRes_Success;
 }
@@ -552,4 +553,20 @@ public any NativeHolsterWeapon(Handle plugin, int numParams) {
 		UnholsterMelee(client);
 	}
 	return 0;
+}
+public any NativeCheckUnarmed(Handle plugin, int numParams) {
+	int client = GetNativeCell(1);
+	if (!(1<=client<=MaxClients)||!IsClientInGame(client)||!IsPlayerAlive(client))
+		ThrowNativeError(SP_ERROR_PARAM, "Invalid client or client not alive (client %i)", client);
+	
+	//check internal flag
+	if (player[client].weaponsStripped != 0) return true;
+	//has active weapon, can't be unarmed
+	if (Client_GetActiveWeapon(client) != INVALID_ENT_REFERENCE) return false;
+	//check other slots
+	for (int slot=0;slot<5;slot++) {
+		int weapon = GetPlayerWeaponSlot(client, slot);
+		if (weapon != INVALID_ENT_REFERENCE) return false;
+	}
+	return true;
 }

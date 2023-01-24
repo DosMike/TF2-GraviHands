@@ -176,6 +176,6 @@ void PreventAPosing(int client) {
 		}
 	}
 	
-	player[client].weaponsStripped = true;
+	player[client].weaponsStripped = 1; //set 1 here so equipping fists will advance to 2 instead of undoing the unarmed status
 	EquipPlayerMelee(client, ITEM_DEFINITION_HEAVY_FISTS);
 }
