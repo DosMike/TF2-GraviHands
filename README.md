@@ -37,6 +37,7 @@ tf2gravihands_grabdistance 120.0 - Maximum distance to grab stuff from, 0 to dis
 tf2gravihands_pulldistance 850.0 - Maximum distance to pull props from, 0 to disable
 tf2gravihands_pullforce_far 400.0 - Pull force to apply per tick when at max pull distance
 tf2gravihands_pullforce_near 1000.0 - Theoretic pull force to apply per tick when at the player
+tf2gravihands_sounds global - Sound engine configuration for Gravity Hands: global|player|disable
 tf2gravihands_enabled 2 - 0=Disabled; 1=Only allow players to /holster their weapon (w/o T-Posing); 2=Enable Gravity Hands
 ```
 

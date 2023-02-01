@@ -478,6 +478,7 @@ bool ForceDropItem(int client, bool punt=false, const float dvelocity[3]=NULL_VE
 }
 
 void PlayActionSound(int client, int sound, bool replace=true) {
+	if (!gGraviHandsSounds) return;
 	float ct = GetClientTime(client);
 	bool played = GravHand[client].playNextAction - ct < 0;
 	if (played || (replace && GravHand[client].lastAudibleAction != sound)) {
@@ -487,27 +488,42 @@ void PlayActionSound(int client, int sound, bool replace=true) {
 		}
 		switch (sound) {
 			case GH_ACTION_PICKUP: {
-				EmitSoundToAll(GH_SOUND_PICKUP, client, SNDCHAN_AUTO);
+				if (gGraviHandsSounds==2)
+					EmitSoundToAll(GH_SOUND_PICKUP, client);
+				else
+					EmitSoundToClient(client, GH_SOUND_PICKUP);
 				GravHand[client].playNextAction = ct + 1.5;
 			}
 			case GH_ACTION_DROP: {
-				EmitSoundToAll(GH_SOUND_DROP, client, SNDCHAN_AUTO);
+				if (gGraviHandsSounds==2)
+					EmitSoundToAll(GH_SOUND_DROP, client);
+				else
+					EmitSoundToClient(client, GH_SOUND_DROP);
 				GravHand[client].playNextAction = ct + 1.5;
 			}
 			case GH_ACTION_TOOHEAVY: {
-				EmitSoundToAll(GH_SOUND_TOOHEAVY, client, SNDCHAN_AUTO);
+				if (gGraviHandsSounds==2)
+					EmitSoundToAll(GH_SOUND_TOOHEAVY, client);
+				else
+					EmitSoundToClient(client, GH_SOUND_TOOHEAVY);
 				GravHand[client].playNextAction = ct + 1.5;
 			}
 			case GH_ACTION_INVALID: {
-				EmitSoundToAll(GH_SOUND_INVALID, client, SNDCHAN_AUTO);
+				if (gGraviHandsSounds==2)
+					EmitSoundToAll(GH_SOUND_INVALID, client);
+				else
+					EmitSoundToClient(client, GH_SOUND_INVALID);
 				GravHand[client].playNextAction = ct + 0.5;
 			}
 			case GH_ACTION_THROW: {
-				EmitSoundToAll(GH_SOUND_THROW, client, SNDCHAN_AUTO);
+				if (gGraviHandsSounds==2)
+					EmitSoundToAll(GH_SOUND_THROW, client);
+				else
+					EmitSoundToClient(client, GH_SOUND_THROW);
 				GravHand[client].playNextAction = ct + 0.5;
 			}
 			case GH_ACTION_FIZZLED: {
-				EmitSoundToClient(client, GH_SOUND_FIZZLED, _, SNDCHAN_AUTO, _, _, 0.33);
+				EmitSoundToClient(client, GH_SOUND_FIZZLED, _, _, _, _, 0.33);
 				GravHand[client].playNextAction = ct + 0.5;
 			}
 			case GH_ACTION_HOLD: {

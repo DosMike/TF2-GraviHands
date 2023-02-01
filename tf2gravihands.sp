@@ -34,7 +34,7 @@
 #pragma newdecls required
 #pragma semicolon 1
 
-#define PLUGIN_VERSION "23w04a"
+#define PLUGIN_VERSION "23w05a"
 //#define PLUGIN_DEBUG
 
 public Plugin myinfo = {
@@ -108,6 +108,8 @@ static ConVar cvarGraviHandsPullForceFar;
 float gGraviHandsPullForceFar;
 static ConVar cvarGraviHandsPullForceNear;
 float gGraviHandsPullForceNear;
+static ConVar cvarGraviHandsSounds;
+int gGraviHandsSounds;
 static ConVar cvarFeatureEnabled;
 #define PZ_FEATURE_HOLSTER 1
 #define PZ_FEATURE_GRAVIHANDS 2
@@ -362,6 +364,9 @@ void CreateConvars() {
 	cvarGraviHandsPullForceNear = CreateConVar("tf2gravihands_pullforce_near", "1000.0", _, _, true, 0.0);
 	cvarGraviHandsPullForceNear.AddChangeHook(OnCVarGraviHandsPullForceNearChange);
 	
+	cvarGraviHandsSounds = CreateConVar("tf2gravihands_sounds", "global", "Control the sound engine. Values are: global, player or disable");
+	cvarGraviHandsSounds.AddChangeHook(OnCVarGraviHandsSoundsChange);
+	
 	cvarFeatureEnabled = CreateConVar("tf2gravihands_enabled", "2", "0=Disabled; 1=Only allow players to /holster their weapon (w/o T-Posing); 2=Enable Gravity Hands", _, true, 0.0, true, 2.0);
 	cvarFeatureEnabled.AddChangeHook(OnCVarFeatureEnabledChange);
 	
@@ -374,7 +379,8 @@ void CreateConvars() {
 	OnCVarGraviHandsPullDistanceChange(cvarGraviHandsPullDistance, "", "");
 	OnCVarGraviHandsPullForceFarChange(cvarGraviHandsPullForceFar, "", "");
 	OnCVarGraviHandsPullForceNearChange(cvarGraviHandsPullForceNear, "", "");
-	OnCVarFeatureEnabledChange(cvarFeatureEnabled, "", "");
+	OnCVarGraviHandsPullForceNearChange(cvarGraviHandsPullForceNear, "", "");
+	OnCVarGraviHandsSoundsChange(cvarGraviHandsSounds, "", "");
 }
 public void OnCVarLockedChange(ConVar convar, const char[] oldValue, const char[] newValue) {
 	char dbuf[32];
@@ -401,6 +407,20 @@ public void OnCVarGraviHandsPullForceFarChange(ConVar convar, const char[] oldVa
 }
 public void OnCVarGraviHandsPullForceNearChange(ConVar convar, const char[] oldValue, const char[] newValue) {
 	gGraviHandsPullForceNear = convar.FloatValue;
+}
+public void OnCVarGraviHandsSoundsChange(ConVar convar, const char[] oldValue, const char[] newValue) {
+	char value[20];
+	convar.GetString(value, sizeof(value));
+	if (StrEqual("global", value, false) || StrEqual("all", value, false)) {
+		gGraviHandsSounds = 2;
+	} else if (StrEqual("player", value, false) || StrEqual("local", value, false)) {
+		gGraviHandsSounds = 1;
+	} else if (StrEqual("off", value, false) || StrEqual("disable", value, false)) {
+		gGraviHandsSounds = 0;
+	} else {
+		PrintToServer("Invalid value for convar tf2gravihands_sounds, pretending it's global");
+		gGraviHandsSounds = 2;
+	}
 }
 public void OnCVarFeatureEnabledChange(ConVar convar, const char[] oldValue, const char[] newValue) {
 	int newFlags;
