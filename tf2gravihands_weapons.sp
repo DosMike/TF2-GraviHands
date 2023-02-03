@@ -87,7 +87,7 @@ bool HolsterMelee(int client) {
 	
 	if (!NotifyWeaponHolster(client, holsterIndex)) return false; //was cancelled
 	//copy melee metadata into holster
-	if (holsterIndex != INVALID_ITEM_DEFINITION) {
+	if (holsterIndex != INVALID_ITEM_DEFINITION && !depDropWeapon) {
 		player[client].holsteredMeta[0] = GetEntProp(melee, Prop_Send, "m_iEntityLevel");
 		player[client].holsteredMeta[1] = GetEntProp(melee, Prop_Send, "m_iEntityQuality");
 		//collect attributes. while up to 20 are supported here, we seem to only be able to restore 16 with tf2items
@@ -104,6 +104,11 @@ bool HolsterMelee(int client) {
 	//needs to be set after Equip call due to event order
 	player[client].holsteredWeapon = holsterIndex;
 	if (switchTo) Client_SetActiveWeapon(client, fists);
+	if (fists != INVALID_ENT_REFERENCE) {
+		//disable client attack animations and sound for fists, plugin will do so.
+		SetEntPropFloat(fists, Prop_Send, "m_flNextPrimaryAttack", view_as<float>(0x7f800000));
+		SetEntPropFloat(fists, Prop_Send, "m_flNextSecondaryAttack", view_as<float>(0x7f800000));
+	}
 	
 	NotifyWeaponHolsterPost(client, holsterIndex);
 	return true;
@@ -131,12 +136,18 @@ void ActualUnholsterMelee(int client) {
 	int restore = player[client].holsteredWeapon;
 	player[client].holsteredWeapon = INVALID_ITEM_DEFINITION;
 	if (restore != INVALID_ITEM_DEFINITION) {
-		EquipPlayerMelee(client, restore, 
-			player[client].holsteredMeta[0],
-			player[client].holsteredMeta[1],
-			player[client].holsteredAttributeCount,
-			player[client].holsteredAttributeIds,
-			player[client].holsteredAttributeValues);
+#if defined __tf2_dropweapon_included
+		if (depDropWeapon) {
+			TF2_RemoveWeaponSlot(client, 2);
+			TF2DW_GiveWeaponForLoadoutSlot(client, 2);
+		} else
+#endif
+			EquipPlayerMelee(client, restore, 
+				player[client].holsteredMeta[0],
+				player[client].holsteredMeta[1],
+				player[client].holsteredAttributeCount,
+				player[client].holsteredAttributeIds,
+				player[client].holsteredAttributeValues);
 		player[client].holsteredWeapon = INVALID_ITEM_DEFINITION;
 	}
 	NotifyWeaponUnholsterPost(client, restore, false);

@@ -29,6 +29,8 @@
 #undef REQUIRE_PLUGIN
 //currently only supporting opt in pvp, dunno how firendly plugins handle this
 #include <pvpoptin>
+//better re-equipping of original melee
+#include <tf2dropweapon>
 #define REQUIRE_PLUGIN
 
 #pragma newdecls required
@@ -93,6 +95,7 @@ enum struct PlayerData {
 }
 PlayerData player[MAXPLAYERS+1];
 bool depOptInPvP;
+bool depDropWeapon;
 
 static ConVar cvarGraviHandsMaxWeight;
 float gGraviHandsMaxWeight;
@@ -140,12 +143,15 @@ public void OnPluginStart() {
 
 public void OnAllPluginsLoaded() {
 	depOptInPvP = LibraryExists("pvpoptin");
+	depDropWeapon = LibraryExists("tf2dropweapon");
 }
 public void OnLibraryAdded(const char[] name) {
 	if (StrEqual(name, "pvpoptin")) { depOptInPvP = true; }
+	if (StrEqual(name, "tf2dropweapon")) { depDropWeapon = true; }
 }
 public void OnLibraryRemoved(const char[] name) {
 	if (StrEqual(name, "pvpoptin")) { depOptInPvP = false; }
+	if (StrEqual(name, "tf2dropweapon")) { depDropWeapon = false; }
 }
 
 public void OnMapStart() {
@@ -381,6 +387,7 @@ void CreateConvars() {
 	OnCVarGraviHandsPullForceNearChange(cvarGraviHandsPullForceNear, "", "");
 	OnCVarGraviHandsPullForceNearChange(cvarGraviHandsPullForceNear, "", "");
 	OnCVarGraviHandsSoundsChange(cvarGraviHandsSounds, "", "");
+	OnCVarFeatureEnabledChange(cvarFeatureEnabled, "", "");
 }
 public void OnCVarLockedChange(ConVar convar, const char[] oldValue, const char[] newValue) {
 	char dbuf[32];
