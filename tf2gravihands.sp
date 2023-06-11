@@ -36,7 +36,7 @@
 #pragma newdecls required
 #pragma semicolon 1
 
-#define PLUGIN_VERSION "23w05a"
+#define PLUGIN_VERSION "23w20a"
 //#define PLUGIN_DEBUG
 
 public Plugin myinfo = {
@@ -314,6 +314,7 @@ void HandlePlayerDeath(int client) {
 	if (player[client].handledDeath) return;
 	player[client].handledDeath = true;
 	
+	ForceDropItem(client);
 	DropHolsteredMelee(client);
 }
 
@@ -370,7 +371,7 @@ void CreateConvars() {
 	cvarGraviHandsPullForceNear = CreateConVar("tf2gravihands_pullforce_near", "1000.0", _, _, true, 0.0);
 	cvarGraviHandsPullForceNear.AddChangeHook(OnCVarGraviHandsPullForceNearChange);
 	
-	cvarGraviHandsSounds = CreateConVar("tf2gravihands_sounds", "global", "Control the sound engine. Values are: global, player or disable");
+	cvarGraviHandsSounds = CreateConVar("tf2gravihands_sounds", "global", "Control the sound engine of gravity hands. Values are: global, player or disable");
 	cvarGraviHandsSounds.AddChangeHook(OnCVarGraviHandsSoundsChange);
 	
 	cvarFeatureEnabled = CreateConVar("tf2gravihands_enabled", "2", "0=Disabled; 1=Only allow players to /holster their weapon (w/o T-Posing); 2=Enable Gravity Hands", _, true, 0.0, true, 2.0);

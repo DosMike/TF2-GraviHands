@@ -304,17 +304,17 @@ static bool TryPickupCursorEnt(int client, float yawAngle[3]) {
 		pickupFlags = 0;
 		weaponOrGib = true;
 	} else { //not an entity we could pick up
-		PlayActionSound(client,GH_ACTION_INVALID);
+		PlayActionSound(client,GH_ACTION_INVALID, false);
 		return false;
 	}
 	//ok we now have a potential candidate for grabbing and collected some meta info
 	// lets ask all other plugins if they are ok with us grabbing this thing
 	if (!NotifyGraviHandsGrab(client, cursorEnt, pickupFlags)) { //plugins said no
-		PlayActionSound(client,GH_ACTION_INVALID);
+		PlayActionSound(client,GH_ACTION_INVALID, false);
 		return false;
 	}
 	if ((pickupFlags & 0xff)) { //if not plugin blocked but still not possible, i want to react to the tooheavy flag
-		PlayActionSound(client, (pickupFlags == PickupFlag_TooHeavy)?GH_ACTION_TOOHEAVY:GH_ACTION_INVALID);
+		PlayActionSound(client, (pickupFlags == PickupFlag_TooHeavy)?GH_ACTION_TOOHEAVY:GH_ACTION_INVALID, false);
 		return false;
 	}
 	//ok now we can finally pick this thing up
@@ -329,7 +329,7 @@ static bool TryPickupCursorEnt(int client, float yawAngle[3]) {
 	//check if this entity is already grabbed
 	for (int i=1;i<=MaxClients;i++) {
 		if (cursorEnt == EntRefToEntIndex(GravHand[client].grabbedEnt)) {
-			PlayActionSound(client,GH_ACTION_INVALID);
+			PlayActionSound(client,GH_ACTION_INVALID, false);
 			return false;
 		}
 	}
