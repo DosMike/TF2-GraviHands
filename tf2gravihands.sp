@@ -12,7 +12,6 @@
 #include <convars>
 
 //generic dependencies
-#include <smlib>
 #include "morecolors.inc"
 #include <vphysics>
 
@@ -36,7 +35,7 @@
 #pragma newdecls required
 #pragma semicolon 1
 
-#define PLUGIN_VERSION "23w20a"
+#define PLUGIN_VERSION "25w21a"
 //#define PLUGIN_DEBUG
 
 public Plugin myinfo = {
@@ -58,7 +57,7 @@ public Plugin myinfo = {
 // "unarmed". the downside is, that heavies with stock melee can not use that
 // as weapon.
 // unholstering will regenerate the melee weapon with stock properties. this
-// will nuke warpaints, attachments, decals from objectors, etc and probably 
+// will nuke warpaints, attachments, decals from objectors, etc and probably
 // remove all custom attributes, but this is the easiest way
 
 #if defined PLUGIN_DEBUG
@@ -123,17 +122,17 @@ int gEnabledFeatures;
 #include "tf2gravihands_prophandling.sp"
 
 public void OnPluginStart() {
-	
+
 	RegConsoleCmd("sm_hands", Command_Holster, "Put away weapons");
 	RegConsoleCmd("sm_holster", Command_Holster, "Put away weapons");
-	
+
 	HookEvent("player_death", OnClientDeathPost);
 	HookEvent("teamplay_round_start", OnMapEntitiesRefreshed);
 	HookEvent("teamplay_restart_round", OnMapEntitiesRefreshed);
-	
+
 	CreateConvars();
 	CreateForwards();
-	
+
 	for (int client=1; client<=MaxClients; client++) {
 		if (!IsValidClient(client)) continue;
 		OnClientConnected(client);
@@ -216,8 +215,8 @@ public Action OnClientWeaponEquip(int client, int weapon) {
 	if (!IsValidClient(client,false) || weapon == INVALID_ENT_REFERENCE) return Plugin_Continue;
 	
 	// THIS WOULD WORK BETTER WITH NOSOOPS TF2UTILS BUT I DON'T WANT TO INTRODUCE
-	// ANOTHER DEPENDENCY. IF YOU THINK IT'S WORTH IT, JUST INCLUDE THE PLUGIN AND 
-	// SWAP COMMENTS FOR THE NEXT TWO LINES 
+	// ANOTHER DEPENDENCY. IF YOU THINK IT'S WORTH IT, JUST INCLUDE THE PLUGIN AND
+	// SWAP COMMENTS FOR THE NEXT TWO LINES
 	//int slot = TF2Util_GetWeaponSlot(weapon);
 	int iindex = GetEntProp(weapon, Prop_Send, "m_iItemDefinitionIndex");
 	int slot = TF2Econ_GetItemDefaultLoadoutSlot(iindex);
@@ -234,7 +233,7 @@ public Action OnClientWeaponEquip(int client, int weapon) {
 		player[client].weaponsStripped = false;
 		if (slot != TFWeaponSlot_Melee) { //the weapon we got is not melee? drop fists and use whatever we got
 			TF2_RemoveWeaponSlot(client, TFWeaponSlot_Melee);
-			Client_SetActiveWeapon(client, weapon);
+			SetEntPropEnt(client, Prop_Send, "m_hActiveWeapon", weapon);
 		}
 	}
 	
@@ -249,13 +248,13 @@ void OnClientWeaponSwitchPost(int client, int weapon) {
 
 public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3], float angles[3], int &weapon, int &subtype, int &cmdnum, int &tickcount, int &seed, int mouse[2]) {
 	bool changed;
-	
-	int activeWeapon = Client_GetActiveWeapon(client);
-	bool isMeleeActive = activeWeapon != INVALID_ENT_REFERENCE && Client_GetWeaponBySlot(client, TFWeaponSlot_Melee) == activeWeapon;
+
+	int activeWeapon = GetEntPropEnt(client, Prop_Data, "m_hActiveWeapon");
+	bool isMeleeActive = activeWeapon != INVALID_ENT_REFERENCE && GetPlayerWeaponSlot(client, TFWeaponSlot_Melee) == activeWeapon;
 	bool isMeleeGravHands = isMeleeActive && IsActiveWeaponHolster(client, activeWeapon);
 	bool suppressButtons = player[client].weaponsStripped!=0;
 	int actualButtons = buttons;
-	
+
 	if ((buttons & IN_ATTACK3) && !(player[client].previousButtons & IN_ATTACK3) && isMeleeActive) {
 		//pressed down on mouse3 while ative weapon == melee (and there is a melee)
 		// -> use this to /holster
@@ -267,7 +266,7 @@ public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3
 		}
 	} else if (isMeleeGravHands && (gEnabledFeatures & PZ_FEATURE_GRAVIHANDS) && !suppressButtons) {
 		float velocity[3];
-		Entity_GetAbsVelocity(client, velocity);
+		GetEntPropVector(client, Prop_Data, "m_vecAbsVelocity", velocity);
 		clientCmdHoldProp(client, buttons, velocity, angles);
 		suppressButtons = true;
 	}
@@ -289,7 +288,7 @@ public Action OnPlayerTakeDamage(int victim, int &attacker, int &inflictor, floa
 		damage = 0.0;
 		return Plugin_Changed;
 	}
-	
+
 	if (IsValidClient(attacker) && victim != attacker && (damagetype & DMG_CLUB)!=0) { //melee is using club damage type
 		int gun=weapon; //prevent writeback on invalid ent ref
 		if (player[attacker].weaponsStripped || IsActiveWeaponHolster(attacker, gun)) {
@@ -313,7 +312,7 @@ public void OnClientDeathPost(Event event, const char[] name, bool dontBroadcast
 void HandlePlayerDeath(int client) {
 	if (player[client].handledDeath) return;
 	player[client].handledDeath = true;
-	
+
 	ForceDropItem(client);
 	DropHolsteredMelee(client);
 }
@@ -349,36 +348,36 @@ public Action OnNotifyGravihandsActive(Handle timer) {
 void CreateConvars() {
 	ConVar version = CreateConVar("tf2gravihands_version", PLUGIN_VERSION, "TF2 Gravity Hands Version", FCVAR_NOTIFY|FCVAR_DONTRECORD);
 	version.AddChangeHook(OnCVarLockedChange);
-	
+
 	cvarGraviHandsMaxWeight = CreateConVar("tf2gravihands_maxmass", "250.0", _, _, true, 0.0);
 	cvarGraviHandsMaxWeight.AddChangeHook(OnCVarGraviHandsMaxWeightChange);
-	
+
 	cvarGraviHandsPuntForce = CreateConVar("tf2gravihands_throwforce", "1000.0", _, _, true, 0.0);
 	cvarGraviHandsPuntForce.AddChangeHook(OnCVarGraviHandsPuntForceChange);
-	
+
 	cvarGraviHandsDropDistance = CreateConVar("tf2gravihands_dropdistance", "200.0", "Maximum distance to the grab point when getting stuck, before being dropped", _, true, 0.0);
 	cvarGraviHandsDropDistance.AddChangeHook(OnCVarGraviHandsDropDistanceChange);
-	
+
 	cvarGraviHandsGrabDistance = CreateConVar("tf2gravihands_grabdistance", "120.0", "Maximum distance to grab stuff from", _, true, 0.0);
 	cvarGraviHandsGrabDistance.AddChangeHook(OnCVarGraviHandsGrabDistanceChange);
-	
+
 	cvarGraviHandsPullDistance = CreateConVar("tf2gravihands_pulldistance", "850.0", "Maximum distance to pull props from", _, true, 0.0);
 	cvarGraviHandsPullDistance.AddChangeHook(OnCVarGraviHandsPullDistanceChange);
-	
+
 	cvarGraviHandsPullForceFar = CreateConVar("tf2gravihands_pullforce_far", "400.0", _, _, true, 0.0);
 	cvarGraviHandsPullForceFar.AddChangeHook(OnCVarGraviHandsPullForceFarChange);
-	
+
 	cvarGraviHandsPullForceNear = CreateConVar("tf2gravihands_pullforce_near", "1000.0", _, _, true, 0.0);
 	cvarGraviHandsPullForceNear.AddChangeHook(OnCVarGraviHandsPullForceNearChange);
-	
+
 	cvarGraviHandsSounds = CreateConVar("tf2gravihands_sounds", "global", "Control the sound engine of gravity hands. Values are: global, player or disable");
 	cvarGraviHandsSounds.AddChangeHook(OnCVarGraviHandsSoundsChange);
-	
+
 	cvarFeatureEnabled = CreateConVar("tf2gravihands_enabled", "2", "0=Disabled; 1=Only allow players to /holster their weapon (w/o T-Posing); 2=Enable Gravity Hands", _, true, 0.0, true, 2.0);
 	cvarFeatureEnabled.AddChangeHook(OnCVarFeatureEnabledChange);
-	
+
 	AutoExecConfig();
-	
+
 	OnCVarGraviHandsMaxWeightChange(cvarGraviHandsMaxWeight, "", "");
 	OnCVarGraviHandsPuntForceChange(cvarGraviHandsPuntForce, "", "");
 	OnCVarGraviHandsDropDistanceChange(cvarGraviHandsDropDistance, "", "");
@@ -441,7 +440,7 @@ public void OnCVarFeatureEnabledChange(ConVar convar, const char[] oldValue, con
 	gEnabledFeatures = newFlags;
 	
 	for (int client=1;client<=MaxClients;client++) {
-		if (Client_IsIngame(client) && IsPlayerAlive(client)) {
+		if (IsClientInGame(client) && IsPlayerAlive(client)) {
 			if (disabled & PZ_FEATURE_GRAVIHANDS) ForceDropItem(client);
 			if (disabled & PZ_FEATURE_HOLSTER) UnholsterMelee(client);
 		}
@@ -548,7 +547,8 @@ public any NativeDropGraviHandsEntity(Handle plugin, int numParams) {
 	bool punt = GetNativeCell(2);
 	if (!IsValidClient(client) || GravHand[client].forceDropProp || GravHand[client].grabbedEnt == INVALID_ENT_REFERENCE) return 0;
 	float vel[3];
-	Entity_GetAbsVelocity(client, vel);
+
+	GetEntPropVector(client, Prop_Data, "m_vecAbsVelocity", vel);
 	if (punt) {
 		float ang[3];
 		GetClientEyeAngles(client, ang);
@@ -571,10 +571,10 @@ public any NativeHolsterWeapon(Handle plugin, int numParams) {
 		ThrowNativeError(SP_ERROR_PARAM, "Invalid client or client not alive (client %i)", client);
 	
 	if (player[client].weaponsStripped) return 0; //can not holster right now
-	
+
 	bool doHolster = GetNativeCell(2)!=0;
 	bool isHolstered = player[client].holsteredWeapon != INVALID_ITEM_DEFINITION;
-	
+
 	if (doHolster && !isHolstered) {
 		HolsterMelee(client);
 	} else if (!doHolster && isHolstered) {
@@ -586,11 +586,11 @@ public any NativeCheckUnarmed(Handle plugin, int numParams) {
 	int client = GetNativeCell(1);
 	if (!(1<=client<=MaxClients)||!IsClientInGame(client)||!IsPlayerAlive(client))
 		ThrowNativeError(SP_ERROR_PARAM, "Invalid client or client not alive (client %i)", client);
-	
+
 	//check internal flag
 	if (player[client].weaponsStripped != 0) return true;
 	//has active weapon, can't be unarmed
-	if (Client_GetActiveWeapon(client) != INVALID_ENT_REFERENCE) return false;
+	if (GetEntPropEnt(client, Prop_Data, "m_hActiveWeapon") != INVALID_ENT_REFERENCE) return false;
 	//check other slots
 	for (int slot=0;slot<5;slot++) {
 		int weapon = GetPlayerWeaponSlot(client, slot);

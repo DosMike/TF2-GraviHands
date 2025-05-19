@@ -25,6 +25,71 @@
 #define GH_ACTION_FIZZLED 6
 #define GH_ACTION_HOLD 7
 
+// -- Spawn Flags copied from smlib --
+/*
+ * Spawn Flags
+ * Many entities define their specific spawnflags, check the HL2SDK.
+ */
+
+/*
+ * Phys prop spawnflags
+ * Taken from hl2sdk-ob-valve\game\shared\props_shared.h
+ */
+#define SF_PHYSPROP_START_ASLEEP				0x000001
+#define SF_PHYSPROP_DONT_TAKE_PHYSICS_DAMAGE	0x000002		// this prop can't be damaged by physics collisions
+#define SF_PHYSPROP_DEBRIS						0x000004
+#define SF_PHYSPROP_MOTIONDISABLED				0x000008		// motion disabled at startup (flag only valid in spawn - motion can be enabled via input)
+#define	SF_PHYSPROP_TOUCH						0x000010		// can be 'crashed through' by running player (plate glass)
+#define SF_PHYSPROP_PRESSURE					0x000020		// can be broken by a player standing on it
+#define SF_PHYSPROP_ENABLE_ON_PHYSCANNON		0x000040		// enable motion only if the player grabs it with the physcannon
+#define SF_PHYSPROP_NO_ROTORWASH_PUSH			0x000080		// The rotorwash doesn't push these
+#define SF_PHYSPROP_ENABLE_PICKUP_OUTPUT		0x000100		// If set, allow the player to +USE this for the purposes of generating an output
+#define SF_PHYSPROP_PREVENT_PICKUP				0x000200		// If set, prevent +USE/Physcannon pickup of this prop
+#define SF_PHYSPROP_PREVENT_PLAYER_TOUCH_ENABLE	0x000400		// If set, the player will not cause the object to enable its motion when bumped into
+#define SF_PHYSPROP_HAS_ATTACHED_RAGDOLLS		0x000800		// Need to remove attached ragdolls on enable motion/etc
+#define SF_PHYSPROP_FORCE_TOUCH_TRIGGERS		0x001000		// Override normal debris behavior and respond to triggers anyway
+#define SF_PHYSPROP_FORCE_SERVER_SIDE			0x002000		// Force multiplayer physics object to be serverside
+#define SF_PHYSPROP_RADIUS_PICKUP				0x004000		// For Xbox, makes small objects easier to pick up by allowing them to be found
+#define SF_PHYSPROP_ALWAYS_PICK_UP				0x100000		// Physcannon can always pick this up, no matter what mass or constraints may apply.
+#define SF_PHYSPROP_NO_COLLISIONS				0x200000		// Don't enable collisions on spawn
+#define SF_PHYSPROP_IS_GIB						0x400000		// Limit # of active gibs
+
+/*
+ * Physbox Spawnflags. Start at 0x01000 to avoid collision with CBreakable's
+ * Taken from hl2sdk-ob-valve\game\server\physobj.h
+ */
+#define SF_PHYSBOX_ASLEEP						0x01000
+#define SF_PHYSBOX_IGNOREUSE					0x02000
+#define SF_PHYSBOX_DEBRIS						0x04000
+#define SF_PHYSBOX_MOTIONDISABLED				0x08000
+#define SF_PHYSBOX_USEPREFERRED					0x10000
+#define SF_PHYSBOX_ENABLE_ON_PHYSCANNON			0x20000
+#define SF_PHYSBOX_NO_ROTORWASH_PUSH			0x40000			// The rotorwash doesn't push these
+#define SF_PHYSBOX_ENABLE_PICKUP_OUTPUT			0x80000
+#define SF_PHYSBOX_ALWAYS_PICK_UP		  		0x100000		// Physcannon can always pick this up, no matter what mass or constraints may apply.
+#define SF_PHYSBOX_NEVER_PICK_UP				0x200000		// Physcannon will never be able to pick this up.
+#define SF_PHYSBOX_NEVER_PUNT					0x400000		// Physcannon will never be able to punt this object.
+#define SF_PHYSBOX_PREVENT_PLAYER_TOUCH_ENABLE	0x800000		// If set, the player will not cause the object to enable its motion when bumped into
+
+/*
+ * Spawnflags for func breakable
+ * Taken from hl2sdk-ob-valve\game\server\func_break.h
+ */
+#define SF_BREAK_TRIGGER_ONLY				0x0001	// may only be broken by trigger
+#define	SF_BREAK_TOUCH						0x0002	// can be 'crashed through' by running player (plate glass)
+#define SF_BREAK_PRESSURE					0x0004	// can be broken by a player standing on it
+#define SF_BREAK_PHYSICS_BREAK_IMMEDIATELY	0x0200	// the first physics collision this breakable has will immediately break it
+#define SF_BREAK_DONT_TAKE_PHYSICS_DAMAGE	0x0400	// this breakable doesn't take damage from physics collisions
+#define SF_BREAK_NO_BULLET_PENETRATION		0x0800  // don't allow bullets to penetrate
+
+/*
+ * Spawnflags for func_pushable (it's also func_breakable, so don't collide with those flags)
+ * Taken from hl2sdk-ob-valve\game\server\func_break.h
+ */
+#define SF_PUSH_BREAKABLE					0x0080
+#define SF_PUSH_NO_USE						0x0100	// player cannot +use pickup this ent
+
+
 enum struct GraviPropData {
 	//grab entity data
 	int rotProxyEnt;
@@ -32,7 +97,7 @@ enum struct GraviPropData {
 	float previousEnd[3]; //allows flinging props
 	float lastValid[3]; //prevent props from being dragged through walls
 	bool dontCheckStartPost; //aabbs collide easily, allow pulling props out of those situations
-	Collision_Group_t collisionFlags;// collisionFlags of held prop
+	int collisionGroup;// collisionFlags of held prop
 	bool forceDropProp;
 	bool blockPunt; //from spawnflags
 	float grabDistance;
@@ -135,13 +200,13 @@ public bool grabFilter(int entity, int contentsMask, int client) {
 static void computeBounds(int entity, float mins[3], float maxs[3]) {
 	float v[3]={8.0,...}; //helper, defining size of bounds box
 	//entities stay inbounds if their COM is inside (thanks vphysics on this one)
-	Entity_GetMinSize(entity, mins);
-	Entity_GetMaxSize(entity, maxs);
+	GetEntPropVector(entity, Prop_Send, "m_vecMins", mins);
+	GetEntPropVector(entity, Prop_Send, "m_vecMaxs", maxs);
 	AddVectors(mins,maxs,mins);
 	ScaleVector(mins,0.5); //mins = now Center
 	//now rotate with the prop
 	float r[3];
-	Entity_GetAbsAngles(entity, r);
+	GetEntPropVector(entity, Prop_Data, "m_angAbsRotation", r);
 	Math_RotateVector(mins, r, mins);
 	//create equidistant box to keep origin of prop in world
 	AddVectors(mins,v,maxs);
@@ -262,10 +327,10 @@ static bool TryPickupCursorEnt(int client, float yawAngle[3]) {
 	int pickupFlags = 0;
 	bool weaponOrGib;
 	if (StrContains(classname, "prop_physics")==0) {
-		if (Entity_GetFlags(cursorEnt) & FL_FROZEN) {
+		if (GetEntProp(cursorEnt, Prop_Data, "m_fFlags") & FL_FROZEN) {
 			pickupFlags |= PickupFlag_MotionDisabled;
 		} else {
-			int spawnFlags = Entity_GetSpawnFlags(cursorEnt);
+			int spawnFlags = GetEntProp(cursorEnt, Prop_Data, "m_spawnflags");
 			bool motion = Phys_IsMotionEnabled(cursorEnt);
 			if ((spawnFlags & SF_PHYSPROP_ENABLE_ON_PHYSCANNON) && !motion) {
 				pickupFlags |= PickupFlag_EnableMotion;
@@ -281,10 +346,10 @@ static bool TryPickupCursorEnt(int client, float yawAngle[3]) {
 			}
 		}
 	} else if (StrEqual(classname, "func_physbox")) {
-		if (Entity_GetFlags(cursorEnt) & FL_FROZEN) {
+		if (GetEntProp(cursorEnt, Prop_Data, "m_fFlags") & FL_FROZEN) {
 			pickupFlags |= PickupFlag_MotionDisabled;
 		} else {
-			int spawnFlags = Entity_GetSpawnFlags(cursorEnt);
+			int spawnFlags = GetEntProp(cursorEnt, Prop_Data, "m_spawnflags");
 			bool motion = Phys_IsMotionEnabled(cursorEnt);
 			if ((spawnFlags & SF_PHYSBOX_ENABLE_ON_PHYSCANNON) && !motion) {
 				pickupFlags |= PickupFlag_EnableMotion;
@@ -349,8 +414,8 @@ static bool TryPickupCursorEnt(int client, float yawAngle[3]) {
 	GravHand[client].lastValid = endpos;
 	GravHand[client].previousEnd = endpos;
 	GravHand[client].dontCheckStartPost = movementCollides(client, endpos, true);
-	GravHand[client].collisionFlags = Entity_GetCollisionGroup(cursorEnt);
-	SetEntityCollisionGroup(cursorEnt, view_as<int>(COLLISION_GROUP_DEBRIS_TRIGGER));
+	GravHand[client].collisionGroup = GetEntProp(cursorEnt, Prop_Send, "m_CollisionGroup");
+	SetEntityCollisionGroup(cursorEnt, view_as<int>(/*COLLISION_GROUP_DEBRIS_TRIGGER*/2));
 	//sound
 	PlayActionSound(client,GH_ACTION_PICKUP);
 	//notify plugins
@@ -367,7 +432,7 @@ static bool TryPullCursorEnt(int client, float yawAngle[3]) {
 	if (entity == INVALID_ENT_REFERENCE) {
 		return false;
 	}
-	Entity_GetClassName(entity, classname, sizeof(classname));
+	GetEntityClassname(entity, classname, sizeof(classname));
 	if (StrContains(classname,"prop_physics")!=0 && !StrEqual(classname, "func_physbox") &&
 		!StrEqual(classname, "tf_dropped_weapon") && !StrEqual(classname, "tf_ammo_pack")) {
 		return false;
@@ -456,7 +521,7 @@ bool ForceDropItem(int client, bool punt=false, const float dvelocity[3]=NULL_VE
 				FireEntityOutput(entity, punt?"OnPhysGunPunt":"OnPhysGunDrop", client);
 		}
 		//reset ref because we're nice
-		SetEntityCollisionGroup(entity, view_as<int>(GravHand[client].collisionFlags));
+		SetEntityCollisionGroup(entity, view_as<int>(GravHand[client].collisionGroup));
 		GravHand[client].justDropped = GravHand[client].grabbedEnt;
 		GravHand[client].grabbedEnt = INVALID_ENT_REFERENCE;
 		NotifyGraviHandsDropped(client, entity, didPunt);
@@ -471,7 +536,7 @@ bool ForceDropItem(int client, bool punt=false, const float dvelocity[3]=NULL_VE
 		GravHand[client].rotProxyEnt = INVALID_ENT_REFERENCE;
 		didStuff = true;
 	}
-	GravHand[client].collisionFlags = COLLISION_GROUP_NONE;
+	GravHand[client].collisionGroup = /*COLLISION_GROUP_NONE*/0;
 	GravHand[client].grabDistance=0.0;
 	GravHand[client].forceDropProp=false;
 	return didStuff;
@@ -542,7 +607,7 @@ void PlayActionSound(int client, int sound, bool replace=true) {
 bool FixPhysPropAttacker(int victim, int& attacker, int& inflictor, int& damagetype) {
 	if (attacker == inflictor && victim != attacker && !IsValidClient(attacker)) {
 		char classname[64];
-		Entity_GetClassName(attacker, classname, sizeof(classname));
+		GetEntityClassname(attacker, classname, sizeof(classname));
 		if (StrEqual(classname, "func_physbox") || StrContains(classname, "prop_physics")==0) {
 			//victim is damaged by physics object, search thrower in our data
 			int thrower = GetTossedBy(attacker);
@@ -569,3 +634,49 @@ bool FixPhysPropAttacker(int victim, int& attacker, int& inflictor, int& damaget
 //	TE_SetupBeamPoints(from, to, PrecacheModel("materials/sprites/laserbeam.vmt", false), 0, 0, 1, 1.0, 1.0, 1.0, 0, 0.0, color, 0);
 //	TE_SendToClient(client);
 //}
+
+// -- below are stocks from smlib --
+
+stock Math_RotateVector(const float vec[3], const float angles[3], float result[3])
+{
+	// First the angle/radiant calculations
+	float rad[3];
+	// I don't really know why, but the alpha, beta, gamma order of the angles are messed up...
+	// 2 = xAxis
+	// 0 = yAxis
+	// 1 = zAxis
+	rad[0] = DegToRad(angles[2]);
+	rad[1] = DegToRad(angles[0]);
+	rad[2] = DegToRad(angles[1]);
+
+	// Pre-calc function calls
+	new Float:cosAlpha = Cosine(rad[0]);
+	new Float:sinAlpha = Sine(rad[0]);
+	new Float:cosBeta = Cosine(rad[1]);
+	new Float:sinBeta = Sine(rad[1]);
+	new Float:cosGamma = Cosine(rad[2]);
+	new Float:sinGamma = Sine(rad[2]);
+
+	// 3D rotation matrix for more information: http://en.wikipedia.org/wiki/Rotation_matrix#In_three_dimensions
+	float x = vec[0], y = vec[1], z = vec[2];
+	float newX, newY, newZ;
+	newY = cosAlpha*y - sinAlpha*z;
+	newZ = cosAlpha*z + sinAlpha*y;
+	y = newY;
+	z = newZ;
+
+	newX = cosBeta*x + sinBeta*z;
+	newZ = cosBeta*z - sinBeta*x;
+	x = newX;
+	z = newZ;
+
+	newX = cosGamma*x - sinGamma*y;
+	newY = cosGamma*y + sinGamma*x;
+	x = newX;
+	y = newY;
+
+	// Store everything...
+	result[0] = x;
+	result[1] = y;
+	result[2] = z;
+}

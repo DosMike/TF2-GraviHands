@@ -72,8 +72,8 @@ bool HolsterMelee(int client) {
 		return false; //wow hey, don't holster grav hands
 	}
 	
-	int active = Client_GetActiveWeapon(client);
-	int melee = Client_GetWeaponBySlot(client, TFWeaponSlot_Melee);
+	int active = GetEntPropEnt(client, Prop_Data, "m_hActiveWeapon");
+	int melee = GetPlayerWeaponSlot(client, TFWeaponSlot_Melee);
 	bool switchTo = (melee == INVALID_ENT_REFERENCE || active != melee); //if melee was not active switch, to holster guns
 	int holsterIndex = INVALID_ITEM_DEFINITION;
 	if (melee != INVALID_ENT_REFERENCE) { 
@@ -103,7 +103,7 @@ bool HolsterMelee(int client) {
 	if (fists == INVALID_ENT_REFERENCE) return false; //giving fists failed?
 	//needs to be set after Equip call due to event order
 	player[client].holsteredWeapon = holsterIndex;
-	if (switchTo) Client_SetActiveWeapon(client, fists);
+	if (switchTo) SetEntPropEnt(client, Prop_Send, "m_hActiveWeapon", fists);
 	if (fists != INVALID_ENT_REFERENCE) {
 		//disable client attack animations and sound for fists, plugin will do so.
 		SetEntPropFloat(fists, Prop_Send, "m_flNextPrimaryAttack", view_as<float>(0x7f800000));
@@ -163,7 +163,7 @@ void DropHolsteredMelee(int client) {
 
 bool IsActiveWeaponHolster(int client, int& weapon=INVALID_ENT_REFERENCE) {
 	if (weapon == INVALID_ENT_REFERENCE) {
-		weapon = Client_GetActiveWeapon(client);
+		weapon = GetEntPropEnt(client, Prop_Data, "m_hActiveWeapon");
 	} else if (weapon < 0) {
 		weapon = EntRefToEntIndex(weapon);
 	}
@@ -178,11 +178,11 @@ bool IsActiveWeaponHolster(int client, int& weapon=INVALID_ENT_REFERENCE) {
 }
 
 void PreventAPosing(int client) {
-	if (Client_GetActiveWeapon(client) != INVALID_ENT_REFERENCE) return;
+	if (GetEntPropEnt(client, Prop_Data, "m_hActiveWeapon") != INVALID_ENT_REFERENCE) return;
 	for (int slot=0;slot<5;slot++) {
 		int weapon = GetPlayerWeaponSlot(client, slot);
 		if (weapon != INVALID_ENT_REFERENCE) {
-			Client_SetActiveWeapon(client, weapon);
+			SetEntPropEnt(client, Prop_Send, "m_hActiveWeapon", weapon);
 			return;
 		}
 	}
