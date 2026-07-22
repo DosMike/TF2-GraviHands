@@ -23,6 +23,7 @@
 #include <tf2items>
 #include <tf2attributes>
 #include <tf_econ_data>
+#include <tf2utils>
 
 //game specific dependencies (optional)
 #undef REQUIRE_PLUGIN
@@ -233,7 +234,7 @@ public Action OnClientWeaponEquip(int client, int weapon) {
 		player[client].weaponsStripped = false;
 		if (slot != TFWeaponSlot_Melee) { //the weapon we got is not melee? drop fists and use whatever we got
 			TF2_RemoveWeaponSlot(client, TFWeaponSlot_Melee);
-			SetEntPropEnt(client, Prop_Send, "m_hActiveWeapon", weapon);
+			TF2Util_SetPlayerActiveWeapon(client, weapon);
 		}
 	}
 	
@@ -247,6 +248,8 @@ void OnClientWeaponSwitchPost(int client, int weapon) {
 }
 
 public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3], float angles[3], int &weapon, int &subtype, int &cmdnum, int &tickcount, int &seed, int mouse[2]) {
+	if (!IsValidClient(client, false) || !IsPlayerAlive(client)) return Plugin_Continue;
+
 	bool changed;
 
 	int activeWeapon = GetEntPropEnt(client, Prop_Data, "m_hActiveWeapon");
@@ -323,7 +326,9 @@ bool IsValidClient(int client, bool allowBots=true) {
 
 public Action Command_Holster(int client, int args) {
 	if (!IsValidClient(client,false)) return Plugin_Handled;
-	if (gEnabledFeatures & PZ_FEATURE_HOLSTER) {
+	if (!IsPlayerAlive(client)) {
+		ReplyToCommand(client, "[SM] You can't do this while dead");
+	} else if (gEnabledFeatures & PZ_FEATURE_HOLSTER) {
 		if (player[client].holsteredWeapon!=INVALID_ITEM_DEFINITION) UnholsterMelee(client);
 		else HolsterMelee(client);
 	} else {

@@ -28,7 +28,7 @@ int EquipPlayerMelee(int client, int definitionIndex, int level=9000, int qualit
 		ThrowError("Could not translate saxxy (%d) for player class %d", definitionIndex, TF2_GetPlayerClass(client));
 	if (StrContains(class, "tf_weapon_")!=0 && !StrEqual(class, "saxxy"))
 		ThrowError("Definition index %d (%s) is not a weapon", definitionIndex, class);
-	
+
 	int flags = FORCE_GENERATION|OVERRIDE_ITEM_DEF|OVERRIDE_ITEM_LEVEL|OVERRIDE_ITEM_QUALITY;
 	if (attribCount>0) flags|=OVERRIDE_ATTRIBUTES;
 	else flags|=PRESERVE_ATTRIBUTES;
@@ -42,7 +42,7 @@ int EquipPlayerMelee(int client, int definitionIndex, int level=9000, int qualit
 //	TF2Items_SetNumAttributes(weapon, 0);
 	TF2Items_SetItemIndex(weapon, definitionIndex);
 	TF2Items_SetClassname(weapon, class);
-	
+
 	TF2_RemoveWeaponSlot(client, TFWeaponSlot_Melee);
 	int entity = TF2Items_GiveNamedItem(client, weapon);
 	delete weapon;
@@ -76,7 +76,7 @@ bool HolsterMelee(int client) {
 	int melee = GetPlayerWeaponSlot(client, TFWeaponSlot_Melee);
 	bool switchTo = (melee == INVALID_ENT_REFERENCE || active != melee); //if melee was not active switch, to holster guns
 	int holsterIndex = INVALID_ITEM_DEFINITION;
-	if (melee != INVALID_ENT_REFERENCE) { 
+	if (melee != INVALID_ENT_REFERENCE) {
 		holsterIndex = GetEntProp(melee, Prop_Send, "m_iItemDefinitionIndex");
 	}
 	if ((GetClientButtons(client) & (IN_ATTACK|IN_ATTACK2))!=0) {
@@ -103,7 +103,7 @@ bool HolsterMelee(int client) {
 	if (fists == INVALID_ENT_REFERENCE) return false; //giving fists failed?
 	//needs to be set after Equip call due to event order
 	player[client].holsteredWeapon = holsterIndex;
-	if (switchTo) SetEntPropEnt(client, Prop_Send, "m_hActiveWeapon", fists);
+	if (switchTo) TF2Util_SetPlayerActiveWeapon(client, fists);
 	if (fists != INVALID_ENT_REFERENCE) {
 		//disable client attack animations and sound for fists, plugin will do so.
 		SetEntPropFloat(fists, Prop_Send, "m_flNextPrimaryAttack", view_as<float>(0x7f800000));
@@ -142,7 +142,7 @@ void ActualUnholsterMelee(int client) {
 			TF2DW_GiveWeaponForLoadoutSlot(client, 2);
 		} else
 #endif
-			EquipPlayerMelee(client, restore, 
+			EquipPlayerMelee(client, restore,
 				player[client].holsteredMeta[0],
 				player[client].holsteredMeta[1],
 				player[client].holsteredAttributeCount,
@@ -182,11 +182,11 @@ void PreventAPosing(int client) {
 	for (int slot=0;slot<5;slot++) {
 		int weapon = GetPlayerWeaponSlot(client, slot);
 		if (weapon != INVALID_ENT_REFERENCE) {
-			SetEntPropEnt(client, Prop_Send, "m_hActiveWeapon", weapon);
+			TF2Util_SetPlayerActiveWeapon(client, weapon);
 			return;
 		}
 	}
-	
+
 	player[client].weaponsStripped = 1; //set 1 here so equipping fists will advance to 2 instead of undoing the unarmed status
 	EquipPlayerMelee(client, ITEM_DEFINITION_HEAVY_FISTS);
 }
