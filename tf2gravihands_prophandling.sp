@@ -7,8 +7,12 @@
  #error Please compile the main file!
 #endif
 
-#define DUMMY_MODEL "models/class_menu/random_class_icon.mdl"
 #define GRAB_DISTANCE 150.0
+#define HOLD_DISTANCE 64.0
+#define HOLD_POSITION_GAIN 12.0
+#define HOLD_MAX_SPEED 800.0
+#define HOLD_MAX_ACCELERATION 4000.0
+#define COLLISION_GROUP_DEBRIS 1
 
 #define GH_SOUND_PICKUP "weapons/physcannon/physcannon_pickup.wav"
 #define GH_SOUND_DROP "weapons/physcannon/physcannon_drop.wav"
@@ -92,13 +96,13 @@
 
 enum struct GraviPropData {
 	//grab entity data
-	int rotProxyEnt;
 	int grabbedEnt;
 	float previousEnd[3]; //allows flinging props
-	float lastValid[3]; //prevent props from being dragged through walls
-	bool dontCheckStartPost; //aabbs collide easily, allow pulling props out of those situations
+	float holdVelocity[3];
 	int collisionGroup;// collisionFlags of held prop
+	bool savedDrag;
 	bool forceDropProp;
+	bool constraintBroken;
 	bool blockPunt; //from spawnflags
 	float grabDistance;
 	
@@ -111,12 +115,11 @@ enum struct GraviPropData {
 	int justDropped;
 	
 	void Reset() {
-		this.rotProxyEnt = INVALID_ENT_REFERENCE;
 		this.grabbedEnt = INVALID_ENT_REFERENCE;
 		ScaleVector(this.previousEnd, 0.0);
-		ScaleVector(this.lastValid, 0.0);
-		this.dontCheckStartPost = false;
+		ScaleVector(this.holdVelocity, 0.0);
 		this.forceDropProp = false;
+		this.constraintBroken = false;
 		this.grabDistance = -1.0;
 		this.playNextAction = 0.0;
 		this.lastAudibleAction = 0;
@@ -167,26 +170,32 @@ static bool SetTossedBy(int entity, int client) {
 	return true;
 }
 
+static void getHoldTarget(int client, float target[3]) {
+	float fwrd[3], targetAngles[3];
+	GetClientEyePosition(client, target);
+	GetClientEyeAngles(client, targetAngles);
+	GetAngleVectors(targetAngles, fwrd, NULL_VECTOR, NULL_VECTOR);
+	ScaleVector(fwrd, HOLD_DISTANCE);
+	AddVectors(target, fwrd, target);
+}
 
-// if we parent the entity to a dummy, we don't have to care about the offset matrix
-static int getOrCreateProxyEnt(int client, float atPos[3]) {
-	int ent = EntRefToEntIndex(GravHand[client].rotProxyEnt);
-	if (ent == INVALID_ENT_REFERENCE) {
-		ent = CreateEntityByName("prop_dynamic_override");//CreateEntityByName("info_target");
-		DispatchKeyValue(ent, "model", DUMMY_MODEL);
-		SetEntPropFloat(ent, Prop_Send, "m_flModelScale", 0.0);
-		DispatchSpawn(ent);
-		TeleportEntity(ent, atPos, NULL_VECTOR, NULL_VECTOR);
-		GravHand[client].rotProxyEnt = EntIndexToEntRef(ent);
-	}
-	return ent;
+static void getEntityWorldCenter(int entity, float center[3]) {
+	float mins[3], maxs[3], angles[3], localCenter[3];
+	GetEntPropVector(entity, Prop_Send, "m_vecMins", mins);
+	GetEntPropVector(entity, Prop_Send, "m_vecMaxs", maxs);
+	AddVectors(mins, maxs, localCenter);
+	ScaleVector(localCenter, 0.5);
+
+	GetEntPropVector(entity, Prop_Data, "m_angAbsRotation", angles);
+	Math_RotateVector(localCenter, angles, localCenter);
+	GetEntPropVector(entity, Prop_Data, "m_vecAbsOrigin", center);
+	AddVectors(center, localCenter, center);
 }
 
 public bool grabFilter(int entity, int contentsMask, int client) {
 	return entity != client
 		&& entity > MaxClients //never clients
 		&& IsValidEntity(entity) //don't grab stale refs
-		&& entity != EntRefToEntIndex(GravHand[client].rotProxyEnt) //don't grab rot proxies
 		&& entity != EntRefToEntIndex(GravHand[client].grabbedEnt) //don't grab grabbed stuff
 		&& GetEntPropEnt(entity, Prop_Send, "moveparent")==INVALID_ENT_REFERENCE; //never grab stuff that's parented (already)
 }
@@ -196,22 +205,6 @@ public bool grabFilter(int entity, int contentsMask, int client) {
 //	Format(buf, sizeof(buf), "(%.2f, %.2f, %.2f)", vec[0], vec[1], vec[2]);
 //	return buf;
 //}
-
-static void computeBounds(int entity, float mins[3], float maxs[3]) {
-	float v[3]={8.0,...}; //helper, defining size of bounds box
-	//entities stay inbounds if their COM is inside (thanks vphysics on this one)
-	GetEntPropVector(entity, Prop_Send, "m_vecMins", mins);
-	GetEntPropVector(entity, Prop_Send, "m_vecMaxs", maxs);
-	AddVectors(mins,maxs,mins);
-	ScaleVector(mins,0.5); //mins = now Center
-	//now rotate with the prop
-	float r[3];
-	GetEntPropVector(entity, Prop_Data, "m_angAbsRotation", r);
-	Math_RotateVector(mins, r, mins);
-	//create equidistant box to keep origin of prop in world
-	AddVectors(mins,v,maxs);
-	SubtractVectors(mins,v,mins);
-}
 
 /** 
  * @param targetPoint as ray end or max distance in look direction
@@ -246,27 +239,6 @@ static int pew(int client, float targetPoint[3], float scanDistance) {
 	return cursor;
 }
 
-static bool movementCollides(int client, float endpos[3], bool onlyTarget) {
-	//check if prop would collide at target position
-	float offset[3], from[3], to[3], mins[3], maxs[3];
-	int grabbed = EntRefToEntIndex(GravHand[client].grabbedEnt);
-	if (grabbed == INVALID_ENT_REFERENCE) ThrowError("%L is not currently grabbing anything", client);
-	//get movement
-	SubtractVectors(endpos, GravHand[client].lastValid, offset);
-	GetEntPropVector(grabbed, Prop_Data, "m_vecAbsOrigin", from);
-	AddVectors(from, offset, to);
-	if (onlyTarget) {
-		from[0]=to[0]-0.1;
-		from[1]=to[1]-0.1;
-		from[2]=to[2]-0.1;
-	}
-	computeBounds(grabbed, mins, maxs);
-	//trace it
-	TR_TraceHullFilter(from, to, mins, maxs, MASK_SOLID, grabFilter, client);
-	bool result = TR_DidHit();
-	return result;
-}
-
 /**
  * This only gets call if isMeleeGravHands in OnPlayerRunCmd, so this does not 
  * have to check if gravity hands are out.
@@ -274,6 +246,12 @@ static bool movementCollides(int client, float endpos[3], bool onlyTarget) {
 bool clientCmdHoldProp(int client, int& buttons, float velocity[3], float angles[3]) {
 	int grabbed = INVALID_ENT_REFERENCE;
 	if (GravHand[client].grabbedEnt!=INVALID_ENT_REFERENCE) grabbed = EntRefToEntIndex(GravHand[client].grabbedEnt);
+	if (grabbed == INVALID_ENT_REFERENCE && GravHand[client].grabbedEnt != INVALID_ENT_REFERENCE) {
+		// The held entity was deleted; also remove its constraint and anchor.
+		PlayActionSound(client, GH_ACTION_FIZZLED);
+		ForceDropItem(client);
+		return true;
+	}
 	
 	bool atk2held = !!(buttons & IN_ATTACK2);
 	//rotate this value
@@ -288,19 +266,15 @@ bool clientCmdHoldProp(int client, int& buttons, float velocity[3], float angles
 			buttons &=~ IN_ATTACK2;
 			return true;
 		} else {
-			ThinkHeldProp(client, grabbed, buttons, angles);
+			ThinkHeldProp(client, grabbed, buttons);
 		}
 	} else if (!GravHand[client].forceDropProp && atk2held) {
-		if (!(gGraviHandsGrabDistance>0.0 && TryPickupCursorEnt(client, angles)) &&
+		if (!(gGraviHandsGrabDistance>0.0 && TryPickupCursorEnt(client)) &&
 			!(gGraviHandsPullDistance>0.0 && TryPullCursorEnt(client, angles)) ) {
 			//if another sound already played, nothing will happen
 			PlayActionSound(client, GH_ACTION_INVALID, false);
 			return false;
 		}
-	} else if (grabbed == INVALID_ENT_REFERENCE && GravHand[client].grabbedEnt != INVALID_ENT_REFERENCE) {
-		//the entity was deleted, no sound is weird
-		PlayActionSound(client, GH_ACTION_FIZZLED);
-		GravHand[client].grabbedEnt = INVALID_ENT_REFERENCE;
 	}
 	if (!atk2held) { GravHand[client].justDropped = INVALID_ENT_REFERENCE; }
 	return true;
@@ -311,15 +285,13 @@ bool clientCmdHoldProp(int client, int& buttons, float velocity[3], float angles
 #define PickupFlag_TooHeavy 0x04
 #define PickupFlag_BlockPunting 0x100
 #define PickupFlag_EnableMotion 0x200
-static bool TryPickupCursorEnt(int client, float yawAngle[3]) {
+static bool TryPickupCursorEnt(int client) {
 	//this is too early
 	if (GetClientTime(client) < GravHand[client].nextPickup) return false;
 	
 	float endpos[3], killVelocity[3];
 	int cursorEnt = pew(client, endpos, gGraviHandsGrabDistance);
 	if (cursorEnt == INVALID_ENT_REFERENCE || EntRefToEntIndex(GravHand[client].justDropped) == cursorEnt) return false;
-	
-	int rotProxy = getOrCreateProxyEnt(client, endpos);
 	
 	//check if cursor is a entity we can grab
 	char classname[20];
@@ -389,33 +361,36 @@ static bool TryPickupCursorEnt(int client, float yawAngle[3]) {
 	}
 	GravHand[client].blockPunt = ((pickupFlags & PickupFlag_BlockPunting)!=0);
 	
-	//generate outputs
-	if (!weaponOrGib) FireEntityOutput(cursorEnt, "OnPhysGunPickup", client);
 	//check if this entity is already grabbed
 	for (int i=1;i<=MaxClients;i++) {
-		if (cursorEnt == EntRefToEntIndex(GravHand[client].grabbedEnt)) {
+		if (cursorEnt == EntRefToEntIndex(GravHand[i].grabbedEnt)) {
 			PlayActionSound(client,GH_ACTION_INVALID, false);
 			return false;
 		}
 	}
-	//position entities
-	TeleportEntity(rotProxy, endpos, yawAngle, NULL_VECTOR);
+	if (!Phys_IsPhysicsObject(cursorEnt) || Phys_IsHinged(cursorEnt)) {
+		PlayActionSound(client,GH_ACTION_INVALID, false);
+		return false;
+	}
+
+	// Stop the old motion before the bounded physical hold controller takes
+	// over. No helper physics object is used: parenting or teleporting one end
+	// of a rigid constraint can inject unbounded impulses into VPhysics.
 	TeleportEntity(cursorEnt, NULL_VECTOR, NULL_VECTOR, killVelocity);
+
 	//grab entity
 	GravHand[client].grabbedEnt = EntIndexToEntRef(cursorEnt);
-	float vec[3], vec2[3];
-	GetClientEyePosition(client, vec);
-	GetEntPropVector(rotProxy, Prop_Data, "m_vecAbsOrigin", vec2);
-	GravHand[client].grabDistance = GetVectorDistance(vec2, vec);
-	//parent to make rotating easier
-	SetVariantString("!activator");
-	AcceptEntityInput(cursorEnt, "SetParent", rotProxy);
+	GravHand[client].constraintBroken = false;
+	GravHand[client].grabDistance = HOLD_DISTANCE;
 	//other setup
-	GravHand[client].lastValid = endpos;
-	GravHand[client].previousEnd = endpos;
-	GravHand[client].dontCheckStartPost = movementCollides(client, endpos, true);
+	getHoldTarget(client, GravHand[client].previousEnd);
+	ScaleVector(GravHand[client].holdVelocity, 0.0);
+	GravHand[client].savedDrag = Phys_IsDragEnabled(cursorEnt);
+	Phys_EnableDrag(cursorEnt, false);
 	GravHand[client].collisionGroup = GetEntProp(cursorEnt, Prop_Send, "m_CollisionGroup");
-	SetEntityCollisionGroup(cursorEnt, view_as<int>(/*COLLISION_GROUP_DEBRIS_TRIGGER*/2));
+	SetEntityCollisionGroup(cursorEnt, COLLISION_GROUP_DEBRIS);
+	//generate outputs
+	if (!weaponOrGib) FireEntityOutput(cursorEnt, "OnPhysGunPickup", client);
 	//sound
 	PlayActionSound(client,GH_ACTION_PICKUP);
 	//notify plugins
@@ -467,52 +442,84 @@ static bool TryPullCursorEnt(int client, float yawAngle[3]) {
 	return true;
 }
 
-static void ThinkHeldProp(int client, int grabbed, int buttons, float yawAngle[3]) {
-	float endpos[3], killVelocity[3];
-	pew(client, endpos, gGraviHandsGrabDistance);
-	int rotProxy = getOrCreateProxyEnt(client, endpos);
-	if (rotProxy != INVALID_ENT_REFERENCE && grabbed != INVALID_ENT_REFERENCE) { //holding
-		if (!movementCollides(client, endpos, GravHand[client].dontCheckStartPost)) {
-			if (buttons & IN_ATTACK && !GravHand[client].blockPunt) { //punt
-				GravHand[client].forceDropProp = true;
-			} else {
-				GravHand[client].lastValid = endpos;
-				GravHand[client].previousEnd = endpos;
-				GravHand[client].dontCheckStartPost = false;
-				TeleportEntity(rotProxy, endpos, yawAngle, killVelocity);
-			}
-		} else if (GetVectorDistance(GravHand[client].lastValid, endpos) > gGraviHandsDropDistance) {
-			GravHand[client].forceDropProp = true;
-		}
-		PlayActionSound(client, GH_ACTION_HOLD);
+static void ThinkHeldProp(int client, int grabbed, int buttons) {
+	if (!Phys_IsPhysicsObject(grabbed)) {
+		GravHand[client].forceDropProp = true;
+		return;
 	}
+
+	if (buttons & IN_ATTACK && !GravHand[client].blockPunt) { //punt
+		GravHand[client].forceDropProp = true;
+		return;
+	}
+
+	float endpos[3], propCenter[3], targetVelocity[3];
+	float desiredVelocity[3], velocityChange[3], zeroAngularVelocity[3];
+	getHoldTarget(client, endpos);
+	getEntityWorldCenter(grabbed, propCenter);
+	SubtractVectors(endpos, propCenter, desiredVelocity);
+	float holdError = GetVectorLength(desiredVelocity);
+	if (holdError > gGraviHandsDropDistance) {
+		GravHand[client].constraintBroken = true;
+		GravHand[client].forceDropProp = true;
+		return;
+	}
+
+	// Feed forward the target's velocity so a moving player does not need to
+	// create a persistent position error before the prop starts following.
+	float tickInterval = GetTickInterval();
+	SubtractVectors(endpos, GravHand[client].previousEnd, targetVelocity);
+	ScaleVector(targetVelocity, 1.0 / tickInterval);
+	GravHand[client].previousEnd = endpos;
+
+	// Add bounded positional correction to the target velocity. The command
+	// itself is acceleration-limited, rather than using m_vecAbsVelocity:
+	// VPhysics props do not keep that entity field synchronized reliably.
+	ScaleVector(desiredVelocity, HOLD_POSITION_GAIN);
+	AddVectors(desiredVelocity, targetVelocity, desiredVelocity);
+	float desiredSpeed = GetVectorLength(desiredVelocity);
+	if (desiredSpeed > HOLD_MAX_SPEED)
+		ScaleVector(desiredVelocity, HOLD_MAX_SPEED / desiredSpeed);
+
+	SubtractVectors(desiredVelocity, GravHand[client].holdVelocity, velocityChange);
+	float velocityChangeLength = GetVectorLength(velocityChange);
+	float maxVelocityChange = HOLD_MAX_ACCELERATION * tickInterval;
+	if (velocityChangeLength > maxVelocityChange)
+		ScaleVector(velocityChange, maxVelocityChange / velocityChangeLength);
+	AddVectors(GravHand[client].holdVelocity, velocityChange, GravHand[client].holdVelocity);
+
+	// Set bounded linear velocity and suppress angular velocity directly. This
+	// keeps the pickup orientation without a persistent motion-controller entity.
+	Phys_SetVelocity(grabbed, GravHand[client].holdVelocity, zeroAngularVelocity, true);
+	Phys_Wake(grabbed);
+
+	PlayActionSound(client, GH_ACTION_HOLD);
 }
 
 bool ForceDropItem(int client, bool punt=false, const float dvelocity[3]=NULL_VECTOR, const float dvangles[3]=NULL_VECTOR) {
 	bool didStuff = false;
 	int entity;
 	if ((entity = EntRefToEntIndex(GravHand[client].grabbedEnt))!=INVALID_ENT_REFERENCE) {
-		float vec[3], origin[3];
-		GetEntPropVector(entity, Prop_Data, "m_vecAbsOrigin", origin);
-		AcceptEntityInput(entity, "ClearParent");
-		//fling
-		bool didPunt;
-		pew(client, vec, gGraviHandsDropDistance);
-		if (punt && !IsNullVector(dvangles)) { //punt
-			GetAngleVectors(dvangles, vec, NULL_VECTOR, NULL_VECTOR);
-			ScaleVector(vec, gGraviHandsPuntForce * 100.0 / Phys_GetMass(entity));
-//				AddVectors(vec, fwd, vec);
-			didPunt=true;
-		} else if (!movementCollides(client, vec, false)) { //throw with swing
-			SubtractVectors(vec, GravHand[client].previousEnd, vec);
-			ScaleVector(vec, 25.0); //give oomph
-		} else {
-			ScaleVector(vec, 0.0); //set 0
+		bool hasPhysics = Phys_IsPhysicsObject(entity);
+		if (hasPhysics) {
+			Phys_EnableDrag(entity, GravHand[client].savedDrag);
 		}
-		if (!IsNullVector(dvelocity)) AddVectors(vec, dvelocity, vec);
-		float zeros[3];
-		TeleportEntity(entity, origin, NULL_VECTOR, zeros); //reset entity
-		Phys_SetVelocity(entity, vec, zeros, true);//use vphysics to accelerate, is more stable
+
+		bool didPunt = false;
+		if (!GravHand[client].constraintBroken && hasPhysics) {
+			float vec[3], currentEnd[3], zeros[3];
+			getHoldTarget(client, currentEnd);
+			if (punt && !IsNullVector(dvangles)) { //punt
+				GetAngleVectors(dvangles, vec, NULL_VECTOR, NULL_VECTOR);
+				ScaleVector(vec, gGraviHandsPuntForce * 100.0 / Phys_GetMass(entity));
+				didPunt=true;
+			} else { //throw with swing
+				SubtractVectors(currentEnd, GravHand[client].previousEnd, vec);
+				ScaleVector(vec, 25.0); //give oomph
+			}
+			if (!IsNullVector(dvelocity)) AddVectors(vec, dvelocity, vec);
+			Phys_SetVelocity(entity, vec, zeros, true);
+		}
 		
 		//fire output that the ent was dropped
 		{	char classname[64];
@@ -531,14 +538,13 @@ bool ForceDropItem(int client, bool punt=false, const float dvelocity[3]=NULL_VE
 		PlayActionSound(client,didPunt?GH_ACTION_THROW:GH_ACTION_DROP);
 		didStuff = true;
 	}
-	if ((entity = EntRefToEntIndex(GravHand[client].rotProxyEnt))!=INVALID_ENT_REFERENCE) {
-		AcceptEntityInput(entity, "Kill");
-		GravHand[client].rotProxyEnt = INVALID_ENT_REFERENCE;
-		didStuff = true;
-	}
+	GravHand[client].grabbedEnt = INVALID_ENT_REFERENCE;
 	GravHand[client].collisionGroup = /*COLLISION_GROUP_NONE*/0;
+	GravHand[client].savedDrag=false;
+	ScaleVector(GravHand[client].holdVelocity, 0.0);
 	GravHand[client].grabDistance=0.0;
 	GravHand[client].forceDropProp=false;
+	GravHand[client].constraintBroken=false;
 	return didStuff;
 }
 
@@ -604,7 +610,8 @@ void PlayActionSound(int client, int sound, bool replace=true) {
 	}
 }
 
-bool FixPhysPropAttacker(int victim, int& attacker, int& inflictor, int& damagetype) {
+bool FixPhysPropAttacker(int victim, int& attacker, int& inflictor, int& damagetype, bool& blockDamage) {
+	blockDamage = false;
 	if (attacker == inflictor && victim != attacker && !IsValidClient(attacker)) {
 		char classname[64];
 		GetEntityClassname(attacker, classname, sizeof(classname));
@@ -615,14 +622,14 @@ bool FixPhysPropAttacker(int victim, int& attacker, int& inflictor, int& damaget
 				//rewrite attacker
 				attacker = thrower;
 				//no self damage (a but too easy to do)
-				bool blockDamage = attacker == victim;
+				blockDamage = attacker == victim;
 				//I know that this is not the inteded use, but TF2 has no other use either
 				damagetype |= DMG_PHYSGUN|DMG_CRUSH;
 				//pvp plugin integration
 				if (depOptInPvP && !pvp_CanAttack(attacker, victim)) {
 					blockDamage = true;
 				}
-				return blockDamage;
+				return true;
 			}
 		}
 	}

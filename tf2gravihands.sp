@@ -155,7 +155,6 @@ public void OnLibraryRemoved(const char[] name) {
 }
 
 public void OnMapStart() {
-	PrecacheModel(DUMMY_MODEL);
 	PrecacheSound(GH_SOUND_PICKUP);
 	PrecacheSound(GH_SOUND_DROP);
 	PrecacheSound(GH_SOUND_INVALID);
@@ -284,11 +283,13 @@ public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3
 
 
 public Action OnPlayerTakeDamage(int victim, int &attacker, int &inflictor, float &damage, int &damagetype, int &weapon, float damageForce[3], float damagePosition[3], int damagecustom) {
-	//player was hit by a prop and we fixed the attacker, but we shall suppress prop damage
-	if (FixPhysPropAttacker(victim, attacker, inflictor, damagetype)) {
-		ScaleVector(damageForce, 0.0);
-		damagetype |= DMG_PREVENT_PHYSICS_FORCE;
-		damage = 0.0;
+	bool blockPhysDamage;
+	if (FixPhysPropAttacker(victim, attacker, inflictor, damagetype, blockPhysDamage)) {
+		if (blockPhysDamage) {
+			ScaleVector(damageForce, 0.0);
+			damagetype |= DMG_PREVENT_PHYSICS_FORCE;
+			damage = 0.0;
+		}
 		return Plugin_Changed;
 	}
 
